@@ -1,0 +1,11 @@
+[Unit]
+Description=FrogOCR
+Requires=postgresql.service
+After=postgresql.service
+
+[Service]
+Type=simple
+ExecStart=/opt/bin/FrogOCR
+
+[Install]
+WantedBy=multi-user.target
