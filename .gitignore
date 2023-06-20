@@ -1,0 +1,13 @@
+Project/vs
+Project/cmake-build-debug
+Project/cmake-build-release
+
+Test
+
+Resources/Configuration.xml
+
+thirdparty
+
+*.pdb
+.idea
+
