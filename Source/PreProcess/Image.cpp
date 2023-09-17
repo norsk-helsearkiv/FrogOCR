@@ -4,13 +4,12 @@
 
 namespace frog::preprocess {
 
+Image::Image(PIX* pix_) : pix{ pix_ } {
+
+}
+
 Image::Image(std::filesystem::path path_) : path{ std::move(path_) } {
     pix = pixRead(path_to_string(path).c_str());
-    if (!pix) {
-        return;
-    }
-    width = static_cast<int>(pix->w);
-    height = static_cast<int>(pix->h);
 }
 
 Image::~Image() {
@@ -22,11 +21,11 @@ PIX* Image::getPix() const {
 }
 
 int Image::getWidth() const {
-    return width;
+    return pix ? static_cast<int>(pix->w) : 0;
 }
 
 int Image::getHeight() const {
-    return height;
+    return pix ? static_cast<int>(pix->h) : 0;
 }
 
 const std::filesystem::path& Image::getPath() const {

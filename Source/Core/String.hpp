@@ -20,6 +20,12 @@ inline std::string path_to_string(const std::filesystem::path& path) {
     return u8string_to_string(path.u8string());
 }
 
+inline std::filesystem::path path_with_extension(const std::filesystem::path& path, std::string_view extension) {
+    auto result = path;
+    result.replace_extension(extension);
+    return result;
+}
+
 template<typename T>
 [[nodiscard]] std::optional<T> from_string(std::string_view string) {
     T result{};

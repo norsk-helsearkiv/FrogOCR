@@ -12,11 +12,11 @@ struct TextLine {
     int vpos{};
     int width{};
     int height{};
+    float rotation{};
     std::optional<int> styleRefs;
     std::vector<String> strings;
 
 	TextLine(String string);
-	TextLine(std::vector<String> strings, std::optional<int> styleRefs = std::nullopt);
 	TextLine() = default;
 
 	int getMinimumVerticalPosition() const;

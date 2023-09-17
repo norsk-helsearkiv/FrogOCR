@@ -6,10 +6,6 @@ TextLine::TextLine(String string) {
     strings.emplace_back(std::move(string));
 }
 
-TextLine::TextLine(std::vector<String> strings_, std::optional<int> styleRefs) : styleRefs{ styleRefs }, strings{ std::move(strings_) } {
-
-}
-
 int TextLine::getMinimumVerticalPosition() const {
     if (strings.empty()) {
         return 0;

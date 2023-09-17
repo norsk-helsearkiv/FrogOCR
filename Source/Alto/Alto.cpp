@@ -84,6 +84,7 @@ Alto::Alto(const ocr::Document& document, const preprocess::Image& image, const 
             for (const auto& line : paragraph.lines) {
                 TextLine textLine;
                 textLine.styleRefs = line.styleRefs;
+                textLine.rotation = line.angleInDegrees;
                 for (const auto& word: line.words) {
                     std::vector<Glyph> glyphs;
                     for (const auto& symbol : word.symbols) {
@@ -93,7 +94,7 @@ Alto::Alto(const ocr::Document& document, const preprocess::Image& image, const 
                         }
                         glyphs.emplace_back(symbol.text, symbol.confidence.getNormalized(), symbol.x, symbol.y, symbol.width, symbol.height, variants);
                     }
-                    textLine.strings.emplace_back(word.text, word.confidence.getNormalized(), word.x, word.y, word.width, word.height, glyphs, word.styleRefs);
+                    textLine.strings.emplace_back(word.text, word.confidence.getNormalized(), word.x, word.y, word.width, word.height, word.angleInDegrees, glyphs, word.styleRefs);
                 }
                 textLine.setBoundingBox(line.x, line.y, line.width, line.height);
                 textBlock.textLines.emplace_back(std::move(textLine));

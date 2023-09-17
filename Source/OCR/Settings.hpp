@@ -16,6 +16,7 @@ struct Settings {
     std::optional<int> cropHeight;
     std::optional<float> minWordConfidence;
     std::string characterWhitelist;
+    std::string textDetector{ "Tesseract" };
 
     Settings() = default;
 
@@ -71,6 +72,8 @@ struct Settings {
                 }
             } else if (key == "CharacterWhitelist") {
                 characterWhitelist = value;
+            } else if (key == "TextDetector") {
+                textDetector = value;
             } else {
                 log::warning("Unknown setting: {} = {}", key, value);
             }

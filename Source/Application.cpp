@@ -13,6 +13,7 @@
 #include "Alto/WriteXml.hpp"
 #include "Core/XML/Validator.hpp"
 #include "PostProcess/Tidy.hpp"
+#include "TextDetection.hpp"
 
 #include <csignal>
 
@@ -55,7 +56,7 @@ void delete_task(const database::Connection& database, std::int64_t taskId) {
     database.execute(R"(delete from "Task" where "TaskId" = $1)", { std::to_string(taskId) });
 }
 
-void add_task(const database::Connection& database, std::string inputPath, std::string outputPath, std::int32_t priority, std::string customData1, std::int64_t customData2, std::string settings) {
+void add_task(const database::Connection& database, std::string_view inputPath, std::string_view outputPath, std::int32_t priority, std::string_view customData1, std::int64_t customData2, std::string_view settings) {
     database.execute(R"(
         insert into "Task" ("InputPath", "OutputPath", "Priority", "CustomData1", "CustomData2", "Settings")
              values ($1, $2, $3, $4, $5, $6)
@@ -71,8 +72,13 @@ void start() {
     bool install{ false };
     bool validate{ false };
     bool exitIfNoTasks{ false };
+    bool exitBeforeWork{ false };
     std::optional<std::filesystem::path> validatePath;
     std::optional<std::filesystem::path> addTasksPath;
+    std::optional<std::filesystem::path> addTasksOutputPath;
+    std::string newTasksCustomData1;
+    std::int64_t newTasksCustomData2{};
+    std::string textDetectorName{ "Tesseract" };
 
     auto arguments = launch_arguments();
     while (!arguments.empty()) {
@@ -101,8 +107,46 @@ void start() {
             }
             continue;
         }
+        if (argument == "--output") {
+            if (!arguments.empty()) {
+                addTasksOutputPath = arguments.top();
+                arguments.pop();
+            }
+            continue;
+        }
+        if (argument == "--text-detector") {
+            if (!arguments.empty()) {
+                textDetectorName = arguments.top();
+                arguments.pop();
+            } else {
+                log::warning("No text detector specified with --text-detector.");
+            }
+            continue;
+        }
+        if (argument == "--custom-data-1") {
+            if (!arguments.empty()) {
+                newTasksCustomData1 = arguments.top();
+                arguments.pop();
+            } else {
+                log::warning("No string specified with --custom--data-1.");
+            }
+            continue;
+        }
+        if (argument == "--custom-data-2") {
+            if (!arguments.empty()) {
+                newTasksCustomData2 = from_string<std::int64_t>(arguments.top()).value_or(0);
+                arguments.pop();
+            } else {
+                log::warning("No integer specified with --custom--data-2.");
+            }
+            continue;
+        }
         if (argument == "--exit-if-no-tasks") {
             exitIfNoTasks = true;
+            continue;
+        }
+        if (argument == "--exit-before-work") {
+            exitBeforeWork = true;
             continue;
         }
         if (argument == "--create-database") {
@@ -123,13 +167,18 @@ void start() {
 
     if (showHelp) {
         fmt::print("FrogOCR converts images to text using Tesseract.\n");
-        fmt::print("--version           Prints the FrogOCR and Tesseract versions\n");
-        fmt::print("--help              Prints this information\n");
-        fmt::print("--add-tasks [path]  Adds tasks recursively from given path\n");
-        fmt::print("--validate [path]   Validate AltoXML files\n");
-        fmt::print("--exit-if-no-tasks  Exit instead of sleeping when there are no tasks to process\n");
-        fmt::print("--install           Install default configuration\n");
-        fmt::print("--create-database   Creates the Task table in the configured database\n");
+        fmt::print("--version                Prints the FrogOCR and Tesseract versions\n");
+        fmt::print("--help                   Prints this information\n");
+        fmt::print("--add-tasks [path]       Adds tasks recursively from given path\n");
+        fmt::print("--validate [path]        Validate AltoXML files\n");
+        fmt::print("--text-detector [string] Tesseract (Default) or Paddle\n");
+        fmt::print("--output [path]          If used with --add-tasks, files are written to the specified directory\n");
+        fmt::print("--custom-data-1 [string] If used with --add-tasks, sets CustomData1 string\n");
+        fmt::print("--custom-data-2 [int64]  If used with --add-tasks, sets CustomData2 64-bit integer\n");
+        fmt::print("--exit-if-no-tasks       Exit instead of sleeping when there are no tasks to process\n");
+        fmt::print("--exit-before-work       Useful if --add-tasks is used and you don't want to process them yet\n");
+        fmt::print("--install                Install default configuration\n");
+        fmt::print("--create-database        Creates the Task table in the configured database\n");
         return;
     }
 
@@ -149,6 +198,7 @@ void start() {
                 "\t<MaxThreadCount>0</MaxThreadCount>\n"
                 "\t<Tessdata>/etc/Frog/tessdata</Tessdata>\n"
                 "\t<Schemas>/etc/Frog/Schemas</Schemas>\n"
+                "\t<DefaultDataset>nor</DefaultDataset>\n"
                 "\t<Database>\n"
                 "\t\t<Host>localhost</Host>\n"
                 "\t\t<Port>5432</Port>\n"
@@ -156,6 +206,8 @@ void start() {
                 "\t\t<Username>frog</Username>\n"
                 "\t\t<Password>frog</Password>\n"
                 "\t</Database>\n"
+                "\t<Python>/opt/conda/envs/paddle-frog/bin/python</Python>\n"
+                "\t<PaddleFrog>/opt/paddle-frog.py</PaddleFrog>\n"
                 "</Configuration>\n"
             };
             if (!write_file("/etc/Frog/Configuration.xml", defaultConfiguration)) {
@@ -276,11 +328,36 @@ void start() {
     // Add tasks
     if (addTasksPath.has_value()) {
         log::info("Add tasks from path: {}", addTasksPath.value());
-        std::vector<std::filesystem::path> newTaskPaths;
+        std::vector<std::pair<std::filesystem::path, std::filesystem::path>> newTaskPaths;
+        const auto inputDirectoryString = path_to_string(addTasksPath.value());
         if (std::filesystem::is_directory(addTasksPath.value())) {
-            newTaskPaths = files_in_directory(addTasksPath.value(), true, ".jpg");
+            const auto& inputPaths = files_in_directory(addTasksPath.value(), true, ".jpg");
+            newTaskPaths.reserve(inputPaths.size());
+            for (const auto& inputPath : inputPaths) {
+                if (addTasksOutputPath.has_value()) {
+                    const auto inputPathString = path_to_string(inputPath);
+                    auto relativeInputPathString = inputPathString.substr(inputDirectoryString.size());
+                    while (relativeInputPathString.starts_with('/')) {
+                        relativeInputPathString.erase(0, 1);
+                    }
+                    auto outputPath = addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml");
+                    newTaskPaths.emplace_back(inputPath, outputPath);
+                } else {
+                    newTaskPaths.emplace_back(inputPath, path_with_extension(inputPath, "xml"));
+                }
+            }
         } else if (std::filesystem::is_regular_file(addTasksPath.value())) {
-            newTaskPaths = { addTasksPath.value() };
+            if (addTasksOutputPath.has_value()) {
+                const auto inputPathString = path_to_string(addTasksPath.value());
+                auto relativeInputPathString = inputPathString.substr(inputDirectoryString.size());
+                while (relativeInputPathString.starts_with('/')) {
+                    relativeInputPathString.erase(0, 1);
+                }
+                auto outputPath = addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml");
+                newTaskPaths.emplace_back(addTasksPath.value(), outputPath);
+            } else {
+                newTaskPaths.emplace_back(addTasksPath.value(), path_with_extension(addTasksPath.value(), "xml"));
+            }
         } else {
             log::error("No directory or file found at specified path.");
             return;
@@ -292,15 +369,25 @@ void start() {
             configuration.database.username,
             configuration.database.password
         };
-        for (const auto& newTaskPath : newTaskPaths) {
-            auto taskXmlPath = newTaskPath;
-            taskXmlPath.replace_extension("xml");
-            add_task(database, newTaskPath, taskXmlPath, 0, "", 0, "SauvolaKFactor=0.16");
+        std::string_view pageSegmentation{ "Block" };
+        if (textDetectorName == "Paddle") {
+            pageSegmentation = "Line";
+        }
+        const auto settings = fmt::format("SauvolaKFactor=0.16,TextDetector={},PageSegmentation={}", textDetectorName, pageSegmentation);
+        for (const auto& [inputPath, outputPath] : newTaskPaths) {
+            const auto inputPathString = path_to_string(inputPath);
+            const auto outputPathString = path_to_string(outputPath);
+            add_task(database, inputPathString, outputPathString, 0, newTasksCustomData1, newTasksCustomData2, settings);
         }
     }
 
+    // Sometimes you just want to relax.
+    if (exitBeforeWork) {
+        return;
+    }
+
     // Load datasets
-    ocr::Dataset dataset{ "nor", configuration.tessdataPath };
+    ocr::Dataset dataset{ configuration.defaultDataset, configuration.tessdataPath };
 
     // Initialize all engines
     std::vector<std::unique_ptr<TaskProcessor>> processors;
@@ -408,30 +495,11 @@ void do_task(const Task& task, ocr::Engine& engine) {
     }
     const ocr::Settings settings{ task.settings };
 
-    // Pre-process image
-    // TODO: Do pre-processing of image.
-
     // Perform OCR
     auto ocrDocument = ocr::scan(engine, image, settings);
 
     // Post-process OCR
     postprocess::remove_garbage(ocrDocument);
-
-#if 0   // Currently disabled. There needs to be more verification that this is a constructive step. It probably isn't.
-    // Step 1: Tidy the results based on configured minimum confidence.
-        for (auto& block: document.blocks) {
-            for (auto& paragraph: block.paragraphs) {
-                for (auto& line: paragraph.lines) {
-                    std::erase_if(line.words, [&settings](const ocr::Word& word) -> bool {
-                        return word.confidence.getNormalized() <= settings.minConfidence;
-                    });
-                }
-                std::erase_if(paragraph.lines, [](const ocr::Line& line) -> bool {
-                    return line.words.empty();
-                });
-            }
-        }
-#endif
 
     // Create Alto
     alto::Alto alto{ ocrDocument, image, settings };

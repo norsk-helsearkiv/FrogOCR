@@ -11,11 +11,12 @@ struct String {
     int vpos{};
     int width{};
     int height{};
+    float rotation{};
     float confidence{};
     std::vector<Glyph> glyphs;
     std::optional<int> styleRefs;
 
-    String(std::string_view content, float confidence, int hpos, int vpos, int width, int height, std::vector<Glyph> glyphs, std::optional<int> styleRefs);
+    String(std::string_view content, float confidence, int hpos, int vpos, int width, int height, float rotation, std::vector<Glyph> glyphs, std::optional<int> styleRefs);
     String() = default;
 
     // Does the string bounding box fit completely inside the rectangle?
