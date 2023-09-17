@@ -28,6 +28,12 @@ Configuration::Configuration(xml::Document document) {
                     database.password = databaseNode.getContent();
                 }
             }
+        } else if (node.getName() == "Python") {
+            pythonPath = node.getContent();
+        } else if (node.getName() == "PaddleFrog") {
+            paddleFrogPath = node.getContent();
+        } else if (node.getName() == "DefaultDataset") {
+            defaultDataset = node.getContent();
         }
     }
 }

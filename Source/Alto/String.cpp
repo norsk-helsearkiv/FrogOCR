@@ -2,8 +2,8 @@
 
 namespace frog::alto {
 
-String::String(std::string_view content, float confidence, int hpos, int vpos, int width, int height, std::vector<Glyph> glyphs_, std::optional<int> styleRefs_)
-    : content{ content }, confidence{ confidence }, hpos{ hpos }, vpos{ vpos }, width{ width }, height{ height }, glyphs{ std::move(glyphs_) }, styleRefs{ styleRefs_ } {
+String::String(std::string_view content, float confidence, int hpos, int vpos, int width, int height, float rotation, std::vector<Glyph> glyphs_, std::optional<int> styleRefs_)
+    : content{ content }, confidence{ confidence }, hpos{ hpos }, vpos{ vpos }, width{ width }, height{ height }, rotation{ rotation }, glyphs{ std::move(glyphs_) }, styleRefs{ styleRefs_ } {
 
 }
 

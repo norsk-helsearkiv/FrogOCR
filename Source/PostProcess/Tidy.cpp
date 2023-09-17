@@ -4,7 +4,7 @@
 namespace frog::postprocess {
 
 static bool is_garbage_word(std::string_view word) {
-
+    return false;
 }
 
 void remove_garbage(ocr::Document& document) {

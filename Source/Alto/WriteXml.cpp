@@ -77,6 +77,9 @@ void append_text_line_xml(std::string& xml, std::string_view id, const TextLine&
     if (textLine.styleRefs.has_value()) {
         xml += fmt::format(" STYLEREFS=\"textstyle_{}\"", textLine.styleRefs.value());
     }
+    if (textLine.rotation != 0.0f) {
+        xml += fmt::format(" ROTATION=\"{}\"", textLine.rotation);
+    }
     xml += ">\n";
     int index{ 0 };
     for (const auto& string: textLine.strings) {
@@ -93,6 +96,9 @@ void append_string_xml(std::string& xml, std::string_view id, const String& stri
     xml += fmt::format("\t\t\t\t\t\t\t<String ID=\"{}\" HPOS=\"{}\" VPOS=\"{}\" WIDTH=\"{}\" HEIGHT=\"{}\" WC=\"{:.2}\" CONTENT=\"{}\"", id, string.hpos, string.vpos, string.width, string.height, string.confidence, to_xml_attribute(string.content));
     if (string.styleRefs.has_value()) {
         xml += fmt::format(" STYLEREFS=\"textstyle_{}\"", string.styleRefs.value());
+    }
+    if (string.rotation != 0.0f) {
+        xml += fmt::format(" ROTATION=\"{}\"", string.rotation);
     }
     if (string.glyphs.empty()) {
         xml += "/>\n";

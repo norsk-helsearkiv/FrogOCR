@@ -124,10 +124,10 @@ void AltoMerger::mergePrintSpace(PrintSpace& printSpace) {
 									const auto stringHeight = string.height;
 									if (auto closestLine = printSpace.findClosestTextLine(areaX, areaY, areaWidth, areaHeight, 10)) {
 										const auto vpos = closestLine->getMinimumVerticalPosition();
-										closestLine->strings.emplace_back(string.content, string.confidence, hpos, vpos, stringWidth, closestLine->getMaxHeight(), std::vector<Glyph>{}, std::nullopt);
+										closestLine->strings.emplace_back(string.content, string.confidence, hpos, vpos, stringWidth, closestLine->getMaxHeight(), 0, std::vector<Glyph>{}, std::nullopt);
 										log::info("Added \"{}\" WC {} to approximate line", string.content, string.confidence);
 									} else {
-										printSpace.composedBlocks.emplace_back(TextBlock{ String{ string.content, string.confidence, hpos, string.vpos, stringWidth, stringHeight, {}, std::nullopt } });
+										printSpace.composedBlocks.emplace_back(TextBlock{ String{ string.content, string.confidence, hpos, string.vpos, stringWidth, stringHeight, 0, {}, std::nullopt } });
 										log::info("Added \"{}\" WC {} to new line", string.content, string.confidence);
 									}
 									merged_strings++;

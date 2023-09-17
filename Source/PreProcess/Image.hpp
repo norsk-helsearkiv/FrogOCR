@@ -9,6 +9,7 @@ namespace frog::preprocess {
 class Image {
 public:
 
+    Image(PIX* pix);
 	Image(std::filesystem::path path);
 	Image(const Image&) = delete;
 	Image(Image&&) = delete;
@@ -31,8 +32,6 @@ private:
 
 	PIX* pix{};
     std::filesystem::path path;
-    int width{};
-    int height{};
 
 };
 

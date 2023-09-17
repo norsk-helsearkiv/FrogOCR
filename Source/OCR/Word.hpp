@@ -12,6 +12,7 @@ struct Word {
 	int y{};
 	int width{};
 	int height{};
+    float angleInDegrees{};
 	std::vector<Symbol> symbols;
 	std::string text;
 	Confidence confidence;

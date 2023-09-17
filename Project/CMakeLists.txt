@@ -35,7 +35,7 @@ file(GLOB_RECURSE SOURCE_HPP_FILES "${ROOT_DIR}/Source/*.hpp")
 source_group(TREE ${ROOT_DIR} FILES ${SOURCE_CPP_FILES})
 source_group(TREE ${ROOT_DIR} FILES ${SOURCE_HPP_FILES})
 
-add_executable(${PROJECT_NAME} ${SOURCE_CPP_FILES} ${SOURCE_HPP_FILES} ../Source/Alto/LoadFromXmlNode.hpp ../Source/Alto/LoadFromXmlNode.cpp ../Source/Alto/WriteXml.hpp ../Source/Alto/WriteXml.cpp ../Source/OCR/PageSegmentation.hpp ../Source/PostProcess/Tidy.hpp ../Source/PostProcess/Tidy.cpp)
+add_executable(${PROJECT_NAME} ${SOURCE_CPP_FILES} ${SOURCE_HPP_FILES})
 
 set(ALL_LINK_LIBRARIES
         general "${THIRDPARTY_RELEASE_DIR}/tesseract/bin/release/.libs/libtesseract.a"
