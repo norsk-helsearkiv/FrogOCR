@@ -1,6 +1,7 @@
 #include "TaskProcessor.hpp"
 #include "Application.hpp"
 #include "Core/Log.hpp"
+#include "Configuration.hpp"
 
 namespace frog::application {
 
@@ -24,7 +25,7 @@ bool TaskProcessor::isFinished() const {
     return finished;
 }
 
-void TaskProcessor::relaunch() {
+void TaskProcessor::relaunch(const Configuration& configuration) {
     if (!finished) {
         log::error("Attempted to relaunch thread before joining with current one.");
         return;
@@ -33,7 +34,7 @@ void TaskProcessor::relaunch() {
         thread.join();
     }
     finished = false;
-    thread = std::thread{ [this] {
+    thread = std::thread{ [this, configuration] {
         while (!finished) {
             {
                 std::lock_guard lock{ taskMutex };
@@ -41,7 +42,7 @@ void TaskProcessor::relaunch() {
                 tasks.erase(tasks.begin());
                 remainingTaskCount--;
             }
-            do_task(activeTask, *engine);
+            do_task(activeTask, *engine, configuration);
             if (tasks.empty()) {
                 finished = true;
             }

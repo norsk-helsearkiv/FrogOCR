@@ -23,16 +23,18 @@ class Connection;
 namespace frog::application::about {
 constexpr std::string_view creator{ "Norsk helsearkiv" };
 constexpr std::string_view name{ "FrogOCR" };
-constexpr std::string_view version{ "1.5.2" };
+constexpr std::string_view version{ "1.5.3" };
 constexpr std::string_view build_date{ __DATE__ };
 }
 
 namespace frog::application {
 
+struct Configuration;
+
 void start();
 
 std::vector<Task> fetch_next_tasks(const database::Connection& database, int count);
-void do_task(const Task& task, ocr::Engine& engine);
+void do_task(const Task& task, ocr::Engine& engine, const Configuration& configuration);
 
 std::filesystem::path launch_path();
 std::stack<std::string_view> launch_arguments();

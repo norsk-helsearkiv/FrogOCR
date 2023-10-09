@@ -423,8 +423,8 @@ void start() {
                 log::info("No tasks in queue. Exiting.");
                 running = false;
             } else {
-                log::info("No tasks in queue. Checking again in 10 minutes.");
-                std::this_thread::sleep_for(std::chrono::minutes{ 10 });
+                log::info("No tasks in queue. Checking again in 30 seconds.");
+                std::this_thread::sleep_for(std::chrono::seconds{ 30 });
             }
         }
         while (!tasks.empty()) {
@@ -434,7 +434,7 @@ void start() {
                 }
                 processor->pushTask(tasks.back());
                 if (processor->isFinished()) {
-                    processor->relaunch();
+                    processor->relaunch(configuration);
                 }
                 tasks.pop_back();
                 if (tasks.empty()) {
@@ -476,7 +476,7 @@ std::vector<Task> fetch_next_tasks(const database::Connection& database, int cou
     return tasks;
 }
 
-void do_task(const Task& task, ocr::Engine& engine) {
+void do_task(const Task& task, ocr::Engine& engine, const Configuration& configuration) {
     // Pre-checks
     if (std::filesystem::exists(task.outputPath)) {
         log::warning("Output file already exists: %cyan{}", task.outputPath);
@@ -496,10 +496,10 @@ void do_task(const Task& task, ocr::Engine& engine) {
     const ocr::Settings settings{ task.settings };
 
     // Perform OCR
-    auto ocrDocument = ocr::scan(engine, image, settings);
+    auto ocrDocument = ocr::scan(engine, image, settings, configuration.pythonPath, configuration.paddleFrogPath);
 
     // Post-process OCR
-    postprocess::remove_garbage(ocrDocument);
+    //postprocess::remove_garbage(ocrDocument);
 
     // Create Alto
     alto::Alto alto{ ocrDocument, image, settings };

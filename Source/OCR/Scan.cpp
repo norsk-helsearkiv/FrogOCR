@@ -70,7 +70,6 @@ Document scan(Engine& engine, const preprocess::Image& image, const Settings& se
             //const auto newHeight = static_cast<int>(maxDim) * 2;
 
             auto clippedPix = copy_pixels_in_quad(image.getPix(), quad);
-
             auto rotatedPix = pixRotate(clippedPix, -quad.bottomRightToLeftAngle(), L_ROTATE_AREA_MAP, L_BRING_IN_WHITE, 0, 0);
 
             const auto fnamec = fmt::format("r-{}-c.png", boxCount);

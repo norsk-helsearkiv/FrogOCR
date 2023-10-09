@@ -8,6 +8,8 @@
 
 namespace frog::application {
 
+struct Configuration;
+
 class TaskProcessor {
 public:
 
@@ -17,7 +19,7 @@ public:
 
     void pushTask(Task task);
     bool isFinished() const;
-    void relaunch();
+    void relaunch(const Configuration& configuration);
     int getRemainingTaskCount() const;
 
 private:
