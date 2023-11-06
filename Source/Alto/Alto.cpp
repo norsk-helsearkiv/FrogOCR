@@ -1,23 +1,23 @@
 #include "Alto.hpp"
 #include "Application.hpp"
-#include "OCR/Document.hpp"
-#include "PreProcess/Image.hpp"
-#include "OCR/Settings.hpp"
+#include "Document.hpp"
+#include "Settings.hpp"
+#include "Image.hpp"
 #include "LoadFromXmlNode.hpp"
 
-std::ostream& operator<<(std::ostream& out, frog::ocr::PageSegmentation pageSegmentation) {
+namespace frog::alto {
+
+static std::string_view tesseractPageSegmentationString(PageSegmentation pageSegmentation) {
     switch (pageSegmentation) {
-        using frog::ocr::PageSegmentation;
-    case PageSegmentation::automatic: return out << "Automatic";
-    case PageSegmentation::sparse: return out << "Sparse";
-    case PageSegmentation::block: return out << "Block";
-    case PageSegmentation::line: return out << "Line";
-    case PageSegmentation::word: return out << "Word";
-    default: return out;
+        using frog::PageSegmentation;
+    case PageSegmentation::automatic: return "Automatic";
+    case PageSegmentation::sparse: return "Sparse";
+    case PageSegmentation::block: return "Block";
+    case PageSegmentation::line: return "Line";
+    case PageSegmentation::word: return "Word";
+    default: return {};
     }
 }
-
-namespace frog::alto {
 
 Alto::Alto(const std::filesystem::path& path) {
     xml::Document document{ read_file(path) };
@@ -33,38 +33,42 @@ Alto::Alto(const std::filesystem::path& path) {
     }
 }
 
-Alto::Alto(const ocr::Document& document, const preprocess::Image& image, const ocr::Settings& settings) {
+Alto::Alto(const Document& document, const Image& image, const Settings& settings) {
     Processing initialOcrProcessing;
     initialOcrProcessing.processingCategory = ProcessingCategory::content_generation;
     initialOcrProcessing.processingDateTime = fmt::format("{}T{}", current_date_string(), current_time_string());
-    initialOcrProcessing.processingAgency = application::about::creator;
+    initialOcrProcessing.processingAgency = about::creator;
     initialOcrProcessing.processingStepDescription = "OCR";
-    initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("SauvolaKFactor: {}", settings.sauvolaKFactor));
-    std::stringstream pageSegmentation;
-    pageSegmentation << settings.pageSegmentation;
-    initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("PageSegmentation: {}", pageSegmentation.str()));
-    if (settings.cropX.has_value()) {
-        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropX: {}%", settings.cropX.value()));
+    initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("SauvolaKFactor: {}", settings.recognition.sauvolaKFactor));
+    initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("PageSegmentation: {}", tesseractPageSegmentationString(settings.recognition.pageSegmentation)));
+    if (settings.detection.cropX.has_value()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropX: {}%", settings.detection.cropX.value()));
     }
-    if (settings.cropY.has_value()) {
-        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropY: {}%", settings.cropY.value()));
+    if (settings.detection.cropY.has_value()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropY: {}%", settings.detection.cropY.value()));
     }
-    if (settings.cropWidth.has_value()) {
-        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropWidth: {}%", settings.cropWidth.value()));
+    if (settings.detection.cropWidth.has_value()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropWidth: {}%", settings.detection.cropWidth.value()));
     }
-    if (settings.cropHeight.has_value()) {
-        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropHeight: {}%", settings.cropHeight.value()));
+    if (settings.detection.cropHeight.has_value()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CropHeight: {}%", settings.detection.cropHeight.value()));
     }
-    if (settings.minWordConfidence.has_value()) {
-        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("MinWordConfidence: {}", settings.minWordConfidence.value()));
+    if (settings.recognition.minWordConfidence.has_value()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("MinWordConfidence: {}", settings.recognition.minWordConfidence.value()));
     }
-    if (!settings.characterWhitelist.empty()) {
-        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CharacterWhitelist: {}", settings.characterWhitelist));
+    if (!settings.recognition.characterWhitelist.empty()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("CharacterWhitelist: {}", settings.recognition.characterWhitelist));
+    }
+    if (!settings.detection.textDetector.empty()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("TextDetector: {}", settings.detection.textDetector));
+    }
+    if (!settings.recognition.textRecognizer.empty()) {
+        initialOcrProcessing.processingStepSettings.emplace_back(fmt::format("TextRecognizer: {}", settings.recognition.textRecognizer));
     }
     initialOcrProcessing.processingSoftware = {
-        application::about::creator,
-        application::about::name,
-        application::version_with_build_date(),
+        about::creator,
+        about::name,
+        version_with_build_date(),
         fmt::format("Built with Tesseract {}", tesseract::TessBaseAPI::Version())
     };
 

@@ -1,23 +1,16 @@
 #include "Application.hpp"
 #include "TaskProcessor.hpp"
-#include "Configuration.hpp"
 #include "Core/XML/Library.hpp"
-#include "OCR/Scan.hpp"
-#include "OCR/Settings.hpp"
-#include "OCR/Dataset.hpp"
-#include "PreProcess/Image.hpp"
+#include "Image.hpp"
 #include "Core/Filesystem.hpp"
 #include "Core/Log.hpp"
 #include "Core/Database/Connection.hpp"
-#include "Alto/Alto.hpp"
-#include "Alto/WriteXml.hpp"
 #include "Core/XML/Validator.hpp"
-#include "PostProcess/Tidy.hpp"
-#include "TextDetection.hpp"
+#include "Install.hpp"
 
 #include <csignal>
 
-namespace frog::application {
+namespace frog {
 
 static bool running{ true };
 
@@ -35,10 +28,10 @@ std::filesystem::path launch_path() {
 
 std::optional<std::filesystem::path> find_configuration_path() {
     const std::vector<std::filesystem::path> candidates{
-        "/etc/Frog/Configuration.xml",
-        "Resources/Configuration.xml",
-        "Configuration.xml",
-        "../../Resources/Configuration.xml"
+        "/etc/frog/config.xml",
+        "Resources/config.xml",
+        "config.xml",
+        "../../Resources/config.xml"
     };
     for (const auto& candidate: candidates) {
         if (std::filesystem::exists(candidate)) {
@@ -53,371 +46,243 @@ std::string version_with_build_date() {
 }
 
 void delete_task(const database::Connection& database, std::int64_t taskId) {
-    database.execute(R"(delete from "Task" where "TaskId" = $1)", { std::to_string(taskId) });
+    database.execute(R"(delete from task where task_id = $1)", { std::to_string(taskId) });
 }
 
 void add_task(const database::Connection& database, std::string_view inputPath, std::string_view outputPath, std::int32_t priority, std::string_view customData1, std::int64_t customData2, std::string_view settings) {
     database.execute(R"(
-        insert into "Task" ("InputPath", "OutputPath", "Priority", "CustomData1", "CustomData2", "Settings")
+        insert into task (input_path, output_path, priority, custom_data_1, custom_data_2, settings_csv)
              values ($1, $2, $3, $4, $5, $6)
     )", {
         inputPath, outputPath, std::to_string(priority), customData1, std::to_string(customData2), settings
     });
 }
 
-void start() {
-    bool showHelp{ false };
-    bool showVersion{ false };
-    bool createDatabase{ false };
-    bool install{ false };
-    bool validate{ false };
-    bool exitIfNoTasks{ false };
-    bool exitBeforeWork{ false };
-    std::optional<std::filesystem::path> validatePath;
-    std::optional<std::filesystem::path> addTasksPath;
+void show_versions() {
+    fmt::print("Frog {} (build date: {})\n", about::version, about::build_date);
+    fmt::print("Tesseract {}\n", tesseract::TessBaseAPI::Version());
+    fmt::print("Paddle {}\n", "2.5.1"); // TODO: Figure out why get_version() returns 0.0.0... It seems to be a CMake issue.
+    fmt::print("OpenCV {}\n", cv::getVersionString());
+}
+
+void show_command_help(std::string_view command) {
+    if (command == "add") {
+        fmt::print("add <path> [--database <index>] [--output <path>] [--recursive] [--custom-data-1 <string>] [--custom-data-2 <int64>]\n");
+    } else if (command == "process") {
+        fmt::print("process [--input <path>] [--recursive] [--exit-if-no-tasks]\n");
+        fmt::print("  --exit-if-no-tasks  Exit instead of sleeping when there are no tasks to process\n");
+    } else if (command == "validate") {
+        fmt::print("validate <path>\n");
+    } else if (command == "install") {
+        fmt::print("install (--configure | --create-database)\n\n");
+        fmt::print("  --configure         Install default configuration\n");
+        fmt::print("  --create-database   Sets up configured databases\n");
+    } else {
+        fmt::print("Unknown command: {}\n", command);
+    }
+}
+
+void show_help() {
+    fmt::print("usage: frog [--help [<command>] | --version] <command> [<args>]\n\n");
+    fmt::print("Frog converts images to text with Tesseract and Paddle.\n\n");
+    fmt::print("COMMANDS\n");
+    fmt::print("  add         Insert new tasks into the queue\n");
+    fmt::print("  process     Process tasks\n");
+    fmt::print("  validate    Validate files according to schema\n");
+    fmt::print("  install     Configure and setup\n");
+    fmt::print("OPTIONS\n");
+    fmt::print("  -h, --help  Show this information\n");
+    fmt::print("  --version   Show application and library versions\n");
+    fmt::print("\n");
+}
+
+void cli_help(std::stack<std::string_view> arguments) {
+    if (arguments.empty()) {
+        show_help();
+    } else {
+        show_command_help(arguments.top());
+    }
+}
+
+void cli_add(std::stack<std::string_view> arguments, const Config& config) {
+    if (arguments.empty()) {
+        fmt::print("Path to file or directory is required.\n");
+        return;
+    }
+    int addTasksDatabaseIndex{};
+    auto addTasksPath = arguments.top();
+    arguments.pop();
     std::optional<std::filesystem::path> addTasksOutputPath;
     std::string newTasksCustomData1;
     std::int64_t newTasksCustomData2{};
-    std::string textDetectorName{ "Tesseract" };
-
-    auto arguments = launch_arguments();
+    TextDetectionSettings textDetectionSettings;
+    TextRecognitionSettings textRecognitionSettings;
+    int priority{};
+    bool overwriteOutput{};
+    std::string orientationClassifier;
     while (!arguments.empty()) {
         const auto argument = arguments.top();
         arguments.pop();
-        if (argument == "--version") {
-            showVersion = true;
-            continue;
-        }
-        if (argument == "--help") {
-            showHelp = true;
-            continue;
-        }
-        if (argument == "--add-tasks") {
-            if (!arguments.empty()) {
-                addTasksPath = arguments.top();
-                arguments.pop();
-            }
-            continue;
-        }
-        if (argument == "--validate") {
-            validate = true;
-            if (!arguments.empty()) {
-                validatePath = arguments.top();
-                arguments.pop();
-            }
-            continue;
-        }
         if (argument == "--output") {
             if (!arguments.empty()) {
                 addTasksOutputPath = arguments.top();
                 arguments.pop();
             }
-            continue;
-        }
-        if (argument == "--text-detector") {
+        } else if (argument == "--database") {
             if (!arguments.empty()) {
-                textDetectorName = arguments.top();
+                addTasksDatabaseIndex = from_string<int>(arguments.top()).value_or(0);
                 arguments.pop();
             } else {
-                log::warning("No text detector specified with --text-detector.");
+                fmt::print("No database specified with --database.\n");
             }
-            continue;
-        }
-        if (argument == "--custom-data-1") {
+        } else if (argument == "--custom-data-1") {
             if (!arguments.empty()) {
                 newTasksCustomData1 = arguments.top();
                 arguments.pop();
             } else {
-                log::warning("No string specified with --custom--data-1.");
+                fmt::print("No string specified with --custom-data-1.\n");
             }
-            continue;
-        }
-        if (argument == "--custom-data-2") {
+        } else if (argument == "--custom-data-2") {
             if (!arguments.empty()) {
-                newTasksCustomData2 = from_string<std::int64_t>(arguments.top()).value_or(0);
+                if (const auto maybeCustomData2 = from_string<std::int64_t>(arguments.top())) {
+                    newTasksCustomData2 = maybeCustomData2.value();
+                } else {
+                    fmt::print("Invalid integer specified with --custom-data-2.\n");
+                }
                 arguments.pop();
             } else {
-                log::warning("No integer specified with --custom--data-2.");
+                fmt::print("No integer specified with --custom-data-2.\n");
             }
-            continue;
-        }
-        if (argument == "--exit-if-no-tasks") {
-            exitIfNoTasks = true;
-            continue;
-        }
-        if (argument == "--exit-before-work") {
-            exitBeforeWork = true;
-            continue;
-        }
-        if (argument == "--create-database") {
-            createDatabase = true;
-            continue;
-        }
-        if (argument == "--install") {
-            install = true;
-            continue;
-        }
-    }
-
-    if (showVersion) {
-        fmt::print("FrogOCR {} (build date: {})\n", about::version, about::build_date);
-        fmt::print("Tesseract {}\n", tesseract::TessBaseAPI::Version());
-        return;
-    }
-
-    if (showHelp) {
-        fmt::print("FrogOCR converts images to text using Tesseract.\n");
-        fmt::print("--version                Prints the FrogOCR and Tesseract versions\n");
-        fmt::print("--help                   Prints this information\n");
-        fmt::print("--add-tasks [path]       Adds tasks recursively from given path\n");
-        fmt::print("--validate [path]        Validate AltoXML files\n");
-        fmt::print("--text-detector [string] Tesseract (Default) or Paddle\n");
-        fmt::print("--output [path]          If used with --add-tasks, files are written to the specified directory\n");
-        fmt::print("--custom-data-1 [string] If used with --add-tasks, sets CustomData1 string\n");
-        fmt::print("--custom-data-2 [int64]  If used with --add-tasks, sets CustomData2 64-bit integer\n");
-        fmt::print("--exit-if-no-tasks       Exit instead of sleeping when there are no tasks to process\n");
-        fmt::print("--exit-before-work       Useful if --add-tasks is used and you don't want to process them yet\n");
-        fmt::print("--install                Install default configuration\n");
-        fmt::print("--create-database        Creates the Task table in the configured database\n");
-        return;
-    }
-
-    if (install) {
-        std::error_code errorCode;
-        if (!std::filesystem::is_directory("/etc/Frog")) {
-            if (!std::filesystem::create_directory("/etc/Frog", errorCode)) {
-                log::error("Failed to create directory: %cyan/etc/Frog");
-                return;
-            }
-        }
-        if (!std::filesystem::exists("/etc/Frog/Configuration.xml")) {
-            constexpr std::string_view defaultConfiguration{
-                R"(<?xml version="1.0" encoding="UTF-8"?>)"
-                "\n"
-                "<Configuration>\n"
-                "\t<MaxThreadCount>0</MaxThreadCount>\n"
-                "\t<Tessdata>/etc/Frog/tessdata</Tessdata>\n"
-                "\t<Schemas>/etc/Frog/Schemas</Schemas>\n"
-                "\t<DefaultDataset>nor</DefaultDataset>\n"
-                "\t<Database>\n"
-                "\t\t<Host>localhost</Host>\n"
-                "\t\t<Port>5432</Port>\n"
-                "\t\t<Name>frog</Name>\n"
-                "\t\t<Username>frog</Username>\n"
-                "\t\t<Password>frog</Password>\n"
-                "\t</Database>\n"
-                "\t<Python>/opt/conda/envs/paddle-frog/bin/python</Python>\n"
-                "\t<PaddleFrog>/opt/paddle-frog.py</PaddleFrog>\n"
-                "</Configuration>\n"
-            };
-            if (!write_file("/etc/Frog/Configuration.xml", defaultConfiguration)) {
-                log::error("Failed to create file %cyan/etc/Frog/Configuration.xml");
-            }
-        }
-        return;
-    }
-
-    const auto configurationXmlPath = find_configuration_path();
-    if (!configurationXmlPath.has_value()) {
-        log::error("Unable to locate configuration");
-    }
-    xml::library::initialize();
-    Configuration configuration{ xml::Document{ read_file(configurationXmlPath.value()) }};
-
-    if (createDatabase) {
-        constexpr std::string_view createTaskTableSql{
-            "create table \"Task\" ("
-            "    \"TaskId\"      bigserial not null primary key,"
-            "    \"InputPath\"   text      not null,"
-            "    \"OutputPath\"  text      not null,"
-            "    \"Priority\"    int       not null default 0,"
-            "    \"CustomData1\" text      null     default null,"
-            "    \"CustomData2\" bigint    null     default null,"
-            "    \"Settings\"    text      null     default null,"
-            "    \"CreatedAt\"   timestamp not null default current_timestamp,"
-            "    constraint \"Unique_Task_InputPath\"  unique (\"InputPath\"),"
-            "    constraint \"Unique_Task_OutputPath\" unique (\"OutputPath\")"
-            ");"
-        };
-        constexpr std::string_view createTaskCustomData1Index{
-            R"(create index "Index_Task_CustomData1" on "Task" ("CustomData1");)"
-        };
-        constexpr std::string_view createTaskCustomData2Index{
-            R"(create index "Index_Task_CustomData2" on "Task" ("CustomData2");)"
-        };
-        database::Connection database{
-            configuration.database.host,
-            configuration.database.port,
-            configuration.database.name,
-            configuration.database.username,
-            configuration.database.password
-        };
-        database.execute(createTaskTableSql);
-        database.execute(createTaskCustomData1Index);
-        database.execute(createTaskCustomData2Index);
-        return;
-    }
-
-    if (!std::filesystem::exists(configuration.tessdataPath)) {
-        log::error("Did not find tessdata directory: {}", configuration.tessdataPath);
-        return;
-    }
-
-    if (!std::filesystem::exists(configuration.schemasPath)) {
-        log::error("Did not find schema directory: {}", configuration.schemasPath);
-        return;
-    }
-
-    xml::library::resolveExternalResourceToLocalFile([&configuration](std::string_view url) -> std::optional<std::filesystem::path> {
-        if (url == "http://www.loc.gov/standards/alto/alto-4-2.xsd" || url == "alto-4-2.xsd") {
-            return configuration.schemasPath / "alto-4-2.xsd";
-        } else if (url == "http://www.loc.gov/standards/xlink/xlink.xsd") {
-            return configuration.schemasPath / "xlink.xsd";
-        } else {
-            return std::nullopt;
-        }
-    });
-
-    // Finish configuration
-    if (configuration.maxThreadCount == 0) {
-        configuration.maxThreadCount = static_cast<int>(std::thread::hardware_concurrency());
-        if (configuration.maxThreadCount == 0) {
-            configuration.maxThreadCount = 1;
-            log::warning("Failed to detect number of processors. Please configure manually. Defaulting to 1.");
-        } else {
-            log::info("Setting max thread count based on detected number of processors: %cyan{}", configuration.maxThreadCount);
-        }
-    }
-
-    // Validate
-    if (validate) {
-        if (!validatePath.has_value()) {
-            log::error("File to validate not specified.");
-            return;
-        }
-        log::info("Validate path: {}", validatePath.value());
-        std::vector<std::filesystem::path> validatePaths;
-        if (std::filesystem::is_directory(validatePath.value())) {
-            validatePaths = files_in_directory(validatePath.value(), true, ".xml");
-        } else if (std::filesystem::is_regular_file(validatePath.value())) {
-            validatePaths = { validatePath.value() };
-        } else {
-            log::error("No directory or file found at specified path.");
-            return;
-        }
-        const xml::Validator validator{ configuration.schemasPath / "alto.xsd" };
-        const auto pathCount = validatePaths.size();
-        std::size_t pathIndex{};
-        for (const auto& path: validatePaths) {
-            pathIndex++;
-            const auto xml = read_file(path);
-            fmt::print("[{:>6}/{}] Validating {} [{:>5} KiB] ... ", pathIndex, pathCount, path, xml.size() / 1024);
-            if (xml.empty()) {
-                fmt::print("EMPTY\n");
-                continue;
-            }
-            if (const auto status = validator.validate(xml); status.has_value()) {
-                fmt::print("ERROR - {}\n", status.value());
+        } else if (argument == "--text-detector") {
+            if (!arguments.empty()) {
+                textDetectionSettings.textDetector = arguments.top();
+                arguments.pop();
             } else {
-                fmt::print("OK\n");
+                fmt::print("No text detector specified with --text-detector.\n");
+            }
+        } else if (argument == "--sauvola-k-factor") {
+            if (!arguments.empty()) {
+                if (const auto maybeFactor = from_string<float>(arguments.top())) {
+                    textRecognitionSettings.sauvolaKFactor = maybeFactor.value();
+                } else {
+                    fmt::print("Invalid decimal number specified with --sauvola-k-factor.\n");
+                }
+                arguments.pop();
+            } else {
+                fmt::print("No decimal number specified with --sauvola-k-factor.\n");
+            }
+        } else if (argument == "--priority") {
+            if (!arguments.empty()) {
+                if (const auto maybePriority = from_string<int>(arguments.top())) {
+                    priority = maybePriority.value();
+                } else {
+                    fmt::print("Invalid integer specified with --priority.\n");
+                }
+                arguments.pop();
+            } else {
+                fmt::print("No integer specified with --priority.\n");
+            }
+        } else if (argument == "--overwrite-output") {
+            overwriteOutput = true;
+        } else if (argument == "--orientation-classifier") {
+            if (!arguments.empty()) {
+                orientationClassifier = arguments.top();
+                arguments.pop();
+            } else {
+                fmt::print("No orientation classifier specified with --orientation-classifier.\n");
             }
         }
-        return;
     }
 
-    // Add tasks
-    if (addTasksPath.has_value()) {
-        log::info("Add tasks from path: {}", addTasksPath.value());
-        std::vector<std::pair<std::filesystem::path, std::filesystem::path>> newTaskPaths;
-        const auto inputDirectoryString = path_to_string(addTasksPath.value());
-        if (std::filesystem::is_directory(addTasksPath.value())) {
-            const auto& inputPaths = files_in_directory(addTasksPath.value(), true, ".jpg");
-            newTaskPaths.reserve(inputPaths.size());
-            for (const auto& inputPath : inputPaths) {
-                if (addTasksOutputPath.has_value()) {
-                    const auto inputPathString = path_to_string(inputPath);
-                    auto relativeInputPathString = inputPathString.substr(inputDirectoryString.size());
-                    while (relativeInputPathString.starts_with('/')) {
-                        relativeInputPathString.erase(0, 1);
-                    }
-                    auto outputPath = addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml");
-                    newTaskPaths.emplace_back(inputPath, outputPath);
-                } else {
-                    newTaskPaths.emplace_back(inputPath, path_with_extension(inputPath, "xml"));
-                }
-            }
-        } else if (std::filesystem::is_regular_file(addTasksPath.value())) {
+    fmt::print("Add tasks from path: {}", addTasksPath);
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> newTaskPaths;
+    const auto inputDirectoryString = path_to_string(addTasksPath);
+    if (std::filesystem::is_directory(addTasksPath)) {
+        const auto& inputPaths = files_in_directory(addTasksPath, true, ".jpg");
+        newTaskPaths.reserve(inputPaths.size());
+        for (const auto& inputPath : inputPaths) {
             if (addTasksOutputPath.has_value()) {
-                const auto inputPathString = path_to_string(addTasksPath.value());
+                const auto inputPathString = path_to_string(inputPath);
                 auto relativeInputPathString = inputPathString.substr(inputDirectoryString.size());
                 while (relativeInputPathString.starts_with('/')) {
                     relativeInputPathString.erase(0, 1);
                 }
-                auto outputPath = addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml");
-                newTaskPaths.emplace_back(addTasksPath.value(), outputPath);
+                newTaskPaths.emplace_back(inputPath, addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml"));
             } else {
-                newTaskPaths.emplace_back(addTasksPath.value(), path_with_extension(addTasksPath.value(), "xml"));
+                newTaskPaths.emplace_back(inputPath, path_with_extension(inputPath, "xml"));
             }
+        }
+    } else if (std::filesystem::is_regular_file(addTasksPath)) {
+        if (addTasksOutputPath.has_value()) {
+            newTaskPaths.emplace_back(addTasksPath, addTasksOutputPath.value());
         } else {
-            log::error("No directory or file found at specified path.");
-            return;
+            newTaskPaths.emplace_back(addTasksPath, path_with_extension(addTasksPath, "xml"));
         }
-        const database::Connection database{
-            configuration.database.host,
-            configuration.database.port,
-            configuration.database.name,
-            configuration.database.username,
-            configuration.database.password
-        };
-        std::string_view pageSegmentation{ "Block" };
-        if (textDetectorName == "Paddle") {
-            pageSegmentation = "Line";
-        }
-        const auto settings = fmt::format("SauvolaKFactor=0.16,TextDetector={},PageSegmentation={}", textDetectorName, pageSegmentation);
-        for (const auto& [inputPath, outputPath] : newTaskPaths) {
-            const auto inputPathString = path_to_string(inputPath);
-            const auto outputPathString = path_to_string(outputPath);
-            add_task(database, inputPathString, outputPathString, 0, newTasksCustomData1, newTasksCustomData2, settings);
-        }
-    }
-
-    // Sometimes you just want to relax.
-    if (exitBeforeWork) {
+    } else {
+        log::error("No directory or file found at specified path.");
         return;
     }
-
-    // Load datasets
-    ocr::Dataset dataset{ configuration.defaultDataset, configuration.tessdataPath };
-
-    // Initialize all engines
-    std::vector<std::unique_ptr<TaskProcessor>> processors;
-    for (int i{ 1 }; i <= configuration.maxThreadCount; i++) {
-        auto engine = std::make_unique<ocr::Engine>(dataset);
-        if (!engine->isOk()) {
-            log::error("Engine #{} failed to initialize.", i);
-            break;
-        }
-        processors.emplace_back(std::make_unique<TaskProcessor>(std::move(engine)));
+    if (addTasksDatabaseIndex >= static_cast<int>(config.databases.size())) {
+        log::error("Database not configured: {}. There are {} databases configured.", addTasksDatabaseIndex, config.databases.size());
+        return;
     }
-    log::info("Initialized {} engines", processors.size());
+    const auto& databaseConfig = config.databases[addTasksDatabaseIndex];
+    const database::Connection database{ databaseConfig.host, databaseConfig.port, databaseConfig.name, databaseConfig.username, databaseConfig.password };
+    std::string_view pageSegmentation{ "Block" };
+    if (textDetectionSettings.textDetector == "Paddle") {
+        pageSegmentation = "Line";
+    }
+    const auto settings = fmt::format("SauvolaKFactor={},TextDetector={},PageSegmentation={},OverwriteOutput={},OrientationClassifier={}", textRecognitionSettings.sauvolaKFactor, textDetectionSettings.textDetector, pageSegmentation, overwriteOutput ? "true" : "false", orientationClassifier);
+    for (const auto& [inputPath, outputPath] : newTaskPaths) {
+        const auto inputPathString = path_to_string(inputPath);
+        const auto outputPathString = path_to_string(outputPath);
+        add_task(database, inputPathString, outputPathString, priority, newTasksCustomData1, newTasksCustomData2, settings);
+    }
+}
 
-    std::signal(SIGTERM, signal_handler);
+void cli_process(std::stack<std::string_view> arguments, const Config& config) {
+    bool exitIfNoTasks{ false };
+    while (!arguments.empty()) {
+        const auto argument = arguments.top();
+        arguments.pop();
+        if (argument == "--exit-if-no-tasks") {
+            exitIfNoTasks = true;
+        }
+    }
+    if (config.profiles.empty()) {
+        fmt::print("No profiles are configured.\n");
+        return;
+    }
+    const auto& profile = config.profiles.front();
+
+    std::vector<std::unique_ptr<TaskProcessor>> processors;
+    for (int i{ 0 }; i < config.maxThreadCount; i++) {
+        processors.emplace_back(std::make_unique<TaskProcessor>(profile));
+    }
+    log::info("Initialized {} task processors", processors.size());
 
     while (running) {
-        const database::Connection database{
-            configuration.database.host,
-            configuration.database.port,
-            configuration.database.name,
-            configuration.database.username,
-            configuration.database.password
-        };
-        if (database.has_error()) {
+        std::vector<std::unique_ptr<database::Connection>> databaseConnections;
+        for (const auto& databaseConfig : config.databases) {
+            auto connection = std::make_unique<database::Connection>(databaseConfig.host, databaseConfig.port, databaseConfig.name, databaseConfig.username, databaseConfig.password);
+            if (connection->has_error()) {
+                log::warning("Failed to connect to database {} at {}", databaseConfig.name, databaseConfig.host);
+            } else {
+                databaseConnections.emplace_back(std::move(connection));
+            }
+        }
+        if (databaseConnections.empty()) {
             log::warning("Failed to connect to database. Trying again in 5 minutes.");
             std::this_thread::sleep_for(std::chrono::minutes{ 5 });
             continue;
         }
-
-        auto tasks = fetch_next_tasks(database, configuration.maxThreadCount * 100);
+        std::vector<Task> tasks;
+        for (const auto& databaseConnection : databaseConnections) {
+            tasks = fetch_next_tasks(*databaseConnection, config.maxThreadCount * 100);
+            if (!tasks.empty()) {
+                break;
+            }
+        }
         if (tasks.empty()) {
             if (exitIfNoTasks) {
                 log::info("No tasks in queue. Exiting.");
@@ -434,7 +299,7 @@ void start() {
                 }
                 processor->pushTask(tasks.back());
                 if (processor->isFinished()) {
-                    processor->relaunch(configuration);
+                    processor->relaunch();
                 }
                 tasks.pop_back();
                 if (tasks.empty()) {
@@ -446,66 +311,151 @@ void start() {
             }
         }
     }
-    log::info("Exited successfully.");
+}
+
+void cli_validate(std::stack<std::string_view> arguments, const Config& config) {
+    if (arguments.empty()) {
+        fmt::print("Path to a file or directory is required.\n");
+        return;
+    }
+    auto validatePath = arguments.top();
+    arguments.pop();
+
+    log::info("Validate path: {}", validatePath);
+    std::vector<std::filesystem::path> validatePaths;
+    if (std::filesystem::is_directory(validatePath)) {
+        validatePaths = files_in_directory(validatePath, true, ".xml");
+    } else if (std::filesystem::is_regular_file(validatePath)) {
+        validatePaths = { validatePath };
+    } else {
+        log::error("No directory or file found at specified path.");
+        return;
+    }
+    const xml::Validator validator{ config.schemas / "alto.xsd" };
+    const auto pathCount = validatePaths.size();
+    std::size_t pathIndex{};
+    for (const auto& path: validatePaths) {
+        pathIndex++;
+        const auto xml = read_file(path);
+        fmt::print("[{:>6}/{}] Validating {} [{:>5} KiB] ... ", pathIndex, pathCount, path, xml.size() / 1024);
+        if (xml.empty()) {
+            fmt::print("EMPTY\n");
+            continue;
+        }
+        if (const auto status = validator.validate(xml); status.has_value()) {
+            fmt::print("ERROR - {}\n", status.value());
+        } else {
+            fmt::print("OK\n");
+        }
+    }
+}
+
+void start() {
+    auto arguments = launch_arguments();
+    if (arguments.empty()) {
+        show_help();
+        return;
+    }
+    const auto launchPath = arguments.top();
+    arguments.pop();
+    if (arguments.empty()) {
+        show_help();
+        return;
+    }
+    const auto commandName = arguments.top();
+    arguments.pop();
+
+    if (commandName == "--version") {
+        show_versions();
+        return;
+    }
+
+    if (commandName == "help" || commandName == "--help" || commandName == "-h") {
+        cli_help(arguments);
+        return;
+    }
+
+    std::signal(SIGTERM, signal_handler);
+
+    const auto configurationXmlPath = find_configuration_path();
+    if (!configurationXmlPath.has_value()) {
+        log::error("Unable to locate configuration");
+        return;
+    }
+    xml::library::initialize();
+    Config config{ xml::Document{ read_file(configurationXmlPath.value()) } };
+
+    if (commandName == "config") {
+        cli_config(arguments);
+        return;
+    }
+
+    if (!std::filesystem::exists(config.schemas)) {
+        log::error("Did not find schema directory: {}", config.schemas);
+        return;
+    }
+
+    xml::library::resolveExternalResourceToLocalFile([&config](std::string_view url) -> std::optional<std::filesystem::path> {
+        if (url == "http://www.loc.gov/standards/alto/alto-4-2.xsd" || url == "alto-4-2.xsd") {
+            return config.schemas / "alto-4-2.xsd";
+        } else if (url == "http://www.loc.gov/standards/xlink/xlink.xsd") {
+            return config.schemas / "xlink.xsd";
+        } else {
+            return std::nullopt;
+        }
+    });
+
+    if (config.maxThreadCount == 0) {
+        config.maxThreadCount = static_cast<int>(std::thread::hardware_concurrency());
+        if (config.maxThreadCount == 0) {
+            config.maxThreadCount = 1;
+            log::warning("Failed to detect number of processors. Please configure manually. Defaulting to 1.");
+        } else {
+            log::info("Setting max thread count based on detected number of processors: %cyan{}", config.maxThreadCount);
+        }
+    }
+
+    if (commandName == "add") {
+        cli_add(arguments, config);
+        return;
+    }
+
+    if (commandName == "validate") {
+        cli_validate(arguments, config);
+        return;
+    }
+
+    if (commandName == "process") {
+        cli_process(arguments, config);
+        return;
+    }
 }
 
 std::vector<Task> fetch_next_tasks(const database::Connection& database, int count) {
     log::info("Fetching next {} tasks", count);
     const auto result = database.execute(fmt::format(R"(
-           select "TaskId",
-                  "InputPath",
-                  "OutputPath",
-                  "Settings"
-             from "Task"
-         order by "Priority" desc
+           select task_id,
+                  input_path,
+                  output_path,
+                  settings_csv
+             from task
+         order by priority desc
             limit {}
     )", count));
     std::vector<Task> tasks;
     for (int i{ 0 }; i < result.count(); i++) {
         const auto row = result.row(i);
         Task task;
-        task.taskId = row.long_integer("\"TaskId\"");
-        task.inputPath = row.text("\"InputPath\"");
-        task.outputPath = row.text("\"OutputPath\"");
-        task.settings = row.text("\"Settings\"");
+        task.taskId = row.long_integer("task_id");
+        task.inputPath = row.text("input_path");
+        task.outputPath = row.text("output_path");
+        task.settingsCsv = row.text("settings_csv");
         tasks.emplace_back(std::move(task));
     }
     for (const auto& task: tasks) {
         delete_task(database, task.taskId);
     }
     return tasks;
-}
-
-void do_task(const Task& task, ocr::Engine& engine, const Configuration& configuration) {
-    // Pre-checks
-    if (std::filesystem::exists(task.outputPath)) {
-        log::warning("Output file already exists: %cyan{}", task.outputPath);
-        return;
-    }
-    if (!std::filesystem::exists(task.inputPath)) {
-        log::error("Input file does not exist: %cyan{}", task.inputPath);
-        return;
-    }
-
-    // Initialize
-    preprocess::Image image{ task.inputPath };
-    if (!image.isOk()) {
-        log::error("Failed to load image: %cyan{}", task.inputPath);
-        return;
-    }
-    const ocr::Settings settings{ task.settings };
-
-    // Perform OCR
-    auto ocrDocument = ocr::scan(engine, image, settings, configuration.pythonPath, configuration.paddleFrogPath);
-
-    // Post-process OCR
-    //postprocess::remove_garbage(ocrDocument);
-
-    // Create Alto
-    alto::Alto alto{ ocrDocument, image, settings };
-    if (!write_file(task.outputPath, alto::to_xml(alto))) {
-        log::error("Failed to write AltoXML file: {}", task.outputPath);
-    }
 }
 
 }

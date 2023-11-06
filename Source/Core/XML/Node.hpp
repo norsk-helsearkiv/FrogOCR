@@ -23,8 +23,8 @@ public:
 
     std::string_view getName() const;
 
-    std::vector<Node> getChildren(std::string_view tagName) const;
-    std::optional<Node> findFirstChild(std::string_view tagName) const;
+    std::vector<Node> getChildren(std::string_view tagName = {}) const;
+    std::optional<Node> findFirstChild(std::string_view tagName = {}) const;
 
     std::optional<std::string> findAttribute(std::string_view name) const;
 

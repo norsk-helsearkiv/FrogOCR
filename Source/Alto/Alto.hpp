@@ -4,11 +4,8 @@
 #include "Styles.hpp"
 #include "Layout.hpp"
 
-namespace frog::preprocess {
+namespace frog {
 class Image;
-}
-
-namespace frog::ocr {
 class Document;
 class Settings;
 }
@@ -22,7 +19,7 @@ struct Alto {
     Layout layout;
 
 	Alto(const std::filesystem::path& path);
-	Alto(const ocr::Document& document, const preprocess::Image& image, const ocr::Settings& settings);
+	Alto(const Document& document, const Image& image, const Settings& settings);
 	Alto() = default;
 
 };

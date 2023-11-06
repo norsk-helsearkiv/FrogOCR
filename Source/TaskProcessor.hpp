@@ -1,30 +1,39 @@
 #pragma once
 
-#include "OCR/Engine.hpp"
 #include "Task.hpp"
+#include "IntegratedTextDetector.hpp"
+#include "Paddle/PaddleTextDetector.hpp"
+#include "Tesseract/TesseractTextRecognizer.hpp"
+#include "Paddle/PaddleTextOrientationClassifier.hpp"
+#include "Application.hpp"
+#include "Core/Log.hpp"
+#include "Alto/Alto.hpp"
+#include "Image.hpp"
+#include "Config.hpp"
+#include "Alto/WriteXml.hpp"
 
 #include <memory>
 #include <thread>
+#include <vector>
 
-namespace frog::application {
-
-struct Configuration;
+namespace frog {
 
 class TaskProcessor {
 public:
 
-    TaskProcessor(std::unique_ptr<ocr::Engine> engine);
+    TaskProcessor(const Profile& profile);
 
     ~TaskProcessor();
 
     void pushTask(Task task);
     bool isFinished() const;
-    void relaunch(const Configuration& configuration);
+    void relaunch();
     int getRemainingTaskCount() const;
+
+    void doTask(const Task& task);
 
 private:
 
-    std::unique_ptr<ocr::Engine> engine;
     std::vector<Task> tasks;
     Task activeTask;
     std::thread thread;
@@ -34,6 +43,11 @@ private:
     std::atomic<bool> finished{ true };
 
     std::atomic<int> remainingTaskCount;
+
+    std::unique_ptr<IntegratedTextDetector> integratedTextDetector;
+    std::unique_ptr<PaddleTextDetector> paddleTextDetector;
+    std::unique_ptr<TesseractTextRecognizer> tesseractTextRecognizer;
+    std::unique_ptr<PaddleTextOrientationClassifier> paddleTextOrientationClassifier;
 
 };
 

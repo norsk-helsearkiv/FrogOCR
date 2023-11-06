@@ -2,13 +2,13 @@
 
 #include <string>
 
-namespace frog::application {
+namespace frog {
 
 struct Task {
     std::int64_t taskId{};
     std::string inputPath;
     std::string outputPath;
-    std::string settings; // setting=value CSV
+    std::string settingsCsv; // setting=value CSV
 };
 
 }

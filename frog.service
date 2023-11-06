@@ -5,7 +5,7 @@ After=postgresql.service
 
 [Service]
 Type=simple
-ExecStart=/opt/bin/FrogOCR
+ExecStart=/opt/frog
 
 [Install]
 WantedBy=multi-user.target

@@ -9,7 +9,7 @@ char** argv{};
 
 }
 
-namespace frog::application {
+namespace frog {
 
 std::stack<std::string_view> launch_arguments() {
     std::stack<std::string_view> args;
@@ -24,7 +24,7 @@ std::stack<std::string_view> launch_arguments() {
 int main(int argc, char** argv) {
     frog::gnulinux::argc = argc;
     frog::gnulinux::argv = argv;
-    frog::application::start();
+    frog::start();
     return 0;
 }
 
