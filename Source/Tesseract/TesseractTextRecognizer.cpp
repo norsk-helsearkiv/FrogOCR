@@ -248,8 +248,6 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
             } while (resultIterator->Next(tesseract::RIL_BLOCK));
         }
     } else {
-        float confidence{};
-        int boxCount{};
         std::size_t quadIndex{};
         for (const auto& quad : quads) {
             auto clippedPix = copy_pixels_in_quad(image.getPix(), quad);
@@ -261,10 +259,8 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
             tesseract.SetImage(rotatedPix);
             recognize_all(tesseract);
             if (auto resultIterator = tesseract.GetIterator()) {
-                boxCount++;
-                auto quadConfidence = getConfidence(tesseract).getNormalized();
                 // TODO: Improve this nested if mess, but for now it's a quick and dirty way to test how well it works.
-                if (quadConfidence < 0.4f) {
+                if (getConfidence(tesseract).getNormalized() < 0.4f) {
                     // Rotate again to see if we get a better result.
                     pixRotate180(rotatedPix, rotatedPix);
                     if (angles[quadIndex] == 0) {
@@ -276,8 +272,7 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
                     recognize_all(tesseract);
                     resultIterator = tesseract.GetIterator();
                     if (resultIterator) {
-                        quadConfidence = getConfidence(tesseract).getNormalized();
-                        if (quadConfidence < 0.4f) {
+                        if (getConfidence(tesseract).getNormalized() < 0.4f) {
                             // Rotate back to original input angle, because it is more likely to be correct.
                             pixRotate180(rotatedPix, rotatedPix);
                             if (angles[quadIndex] == 0) {
@@ -288,7 +283,6 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
                             tesseract.SetImage(rotatedPix);
                             resultIterator = tesseract.GetIterator();
                             if (resultIterator) {
-                                quadConfidence = getConfidence(tesseract).getNormalized();
                                 build_from_result_iterator(document, resultIterator, quad, buildState);
                             }
                         } else {
@@ -298,13 +292,24 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
                 } else {
                     build_from_result_iterator(document, resultIterator, quad, buildState);
                 }
-                confidence += quadConfidence;
             }
             pixDestroy(&clippedPix);
             quadIndex++;
         }
-        if (boxCount > 0) {
-            confidence /= static_cast<float>(boxCount);
+        float confidence{};
+        int wordCount{};
+        for (const auto& block : document.blocks) {
+            for (const auto& paragraph : block.paragraphs) {
+                for (const auto& line : paragraph.lines) {
+                    for (const auto& word : line.words) {
+                        confidence += word.confidence.getNormalized();
+                        wordCount++;
+                    }
+                }
+            }
+        }
+        if (wordCount > 0) {
+            confidence /= static_cast<float>(wordCount);
         }
         document.confidence = { confidence, Confidence::Format::normalized };
     }
