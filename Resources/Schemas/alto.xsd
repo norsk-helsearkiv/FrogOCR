@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xlink="http://www.w3.org/1999/xlink">
-    <xsd:import namespace="http://www.loc.gov/standards/alto/ns-v4#" schemaLocation="alto-4-2.xsd"/>
+    <xsd:import namespace="http://www.loc.gov/standards/alto/ns-v4#" schemaLocation="alto-4-4.xsd"/>
 </xsd:schema>

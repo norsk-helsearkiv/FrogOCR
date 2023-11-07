@@ -3,7 +3,7 @@
 #include "paddle_api.h"
 #include "paddle_inference_api.h"
 
-#include "PaddleTextOrientationClassifier.hpp"
+#include "PaddleTextAngleClassifier.hpp"
 #include "utility.hpp"
 
 namespace frog {

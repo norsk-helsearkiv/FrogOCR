@@ -2,6 +2,83 @@
 
 namespace frog {
 
+static std::string get_application_description_for_alto() {
+    return fmt::format("Tesseract {} / Paddle {} / OpenCV {}", get_tesseract_version(), get_paddle_version(), get_opencv_version());
+}
+
+static std::string create_processing_date_time() {
+    return fmt::format("{}T{}", current_date_string(), current_time_string());
+}
+
+static alto::ProcessingSoftware create_processing_software() {
+    return { about::creator, about::name, version_with_build_date(), get_application_description_for_alto() };
+}
+
+static alto::Processing create_alto_text_detection_processing(const TextDetectionSettings& settings) {
+    alto::Processing processing;
+    processing.processingCategory = alto::ProcessingCategory::pre_operation;
+    processing.processingAgency = about::creator;
+    processing.processingStepDescription = "TextDetection";
+    processing.processingStepSettings.emplace_back(fmt::format("TextDetector: {}", settings.textDetector));
+    if (settings.cropX.has_value()) {
+        processing.processingStepSettings.emplace_back(fmt::format("CropX: {}%", settings.cropX.value()));
+    }
+    if (settings.cropY.has_value()) {
+        processing.processingStepSettings.emplace_back(fmt::format("CropY: {}%", settings.cropY.value()));
+    }
+    if (settings.cropWidth.has_value()) {
+        processing.processingStepSettings.emplace_back(fmt::format("CropWidth: {}%", settings.cropWidth.value()));
+    }
+    if (settings.cropHeight.has_value()) {
+        processing.processingStepSettings.emplace_back(fmt::format("CropHeight: {}%", settings.cropHeight.value()));
+    }
+    for (const auto& [key, value] : settings.other) {
+        processing.processingStepSettings.emplace_back(fmt::format("TextDetection.{}: {}", key, value));
+    }
+    processing.processingSoftware = create_processing_software();
+    return processing;
+}
+
+static alto::Processing create_alto_text_angle_classification_processing(std::string textAngleClassifier) {
+    alto::Processing processing;
+    processing.processingCategory = alto::ProcessingCategory::pre_operation;
+    processing.processingAgency = about::creator;
+    processing.processingStepDescription = "TextAngleClassification";
+    processing.processingStepSettings.emplace_back(fmt::format("TextAngleClassifier: {}", textAngleClassifier));
+    processing.processingSoftware = create_processing_software();
+    return processing;
+}
+
+static alto::Processing create_alto_text_recognition_processing(const TextRecognitionSettings& settings) {
+    alto::Processing processing;
+    processing.processingCategory = alto::ProcessingCategory::content_generation;
+    processing.processingAgency = about::creator;
+    processing.processingStepDescription = "TextRecognition";
+    processing.processingStepSettings.emplace_back(fmt::format("TextRecognizer: {}", settings.textRecognizer));
+    if (settings.textRecognizer == "Tesseract") {
+        processing.processingStepSettings.emplace_back(fmt::format("SauvolaKFactor: {}", settings.sauvolaKFactor));
+        processing.processingStepSettings.emplace_back(fmt::format("PageSegmentation: {}", page_segmentation_string(settings.pageSegmentation)));
+        if (!settings.characterWhitelist.empty()) {
+            processing.processingStepSettings.emplace_back(fmt::format("CharacterWhitelist: {}", settings.characterWhitelist));
+        }
+    }
+    if (settings.minWordConfidence.has_value()) {
+        processing.processingStepSettings.emplace_back(fmt::format("MinWordConfidence: {}", settings.minWordConfidence.value()));
+    }
+    processing.processingSoftware = create_processing_software();
+    return processing;
+}
+
+static std::vector<alto::Processing> create_alto_processings(const Settings& settings) {
+    std::vector<alto::Processing> processings;
+    processings.emplace_back(create_alto_text_detection_processing(settings.detection));
+    if (settings.textAngleClassifier.has_value()) {
+        processings.emplace_back(create_alto_text_angle_classification_processing(settings.textAngleClassifier.value()));
+    }
+    processings.emplace_back(create_alto_text_recognition_processing(settings.recognition));
+    return processings;
+}
+
 TaskProcessor::TaskProcessor(const Profile& profile) {
     integratedTextDetector = std::make_unique<IntegratedTextDetector>();
     if (profile.paddleTextDetector.has_value()) {
@@ -11,7 +88,7 @@ TaskProcessor::TaskProcessor(const Profile& profile) {
         tesseractTextRecognizer = std::make_unique<TesseractTextRecognizer>(profile.tesseract.value());
     }
     if (profile.paddleTextOrientationClassifier.has_value()) {
-        paddleTextOrientationClassifier = std::make_unique<PaddleTextOrientationClassifier>(profile.paddleTextOrientationClassifier.value());
+        paddleTextAngleClassifier = std::make_unique<PaddleTextAngleClassifier>(profile.paddleTextOrientationClassifier.value());
     }
 }
 
@@ -99,14 +176,15 @@ void TaskProcessor::doTask(const Task& task) {
     }
 
     // Text Detection
+    const auto textDetectionDateTime = create_processing_date_time();
     const auto& quads = textDetector->detect(image, settings.detection);
 
-    // Text Orientation Classification
+    // Text Angle Classification
+    const auto textAngleClassificationDateTime = create_processing_date_time();
     std::vector<int> angles;
     angles.resize(quads.size(), 0);
-
-    if (paddleTextOrientationClassifier && settings.orientationClassifier == "Paddle") {
-        const auto& classifications = paddleTextOrientationClassifier->classify(image, quads);
+    if (paddleTextAngleClassifier && settings.textAngleClassifier == "Paddle") {
+        const auto& classifications = paddleTextAngleClassifier->classify(image, quads);
         std::size_t angledCount{};
         for (std::size_t i{}; i < quads.size(); i++) {
             if (classifications[i].angle() == 180 && classifications[i].confidence > 0.95f) {
@@ -125,10 +203,23 @@ void TaskProcessor::doTask(const Task& task) {
     }
 
     // Text Recognition
+    const auto textRecognitionDateTime = create_processing_date_time();
     auto ocrDocument = textRecognizer->recognize(image, quads, angles, settings.recognition);
 
     // Create Alto
-    alto::Alto alto{ ocrDocument, image, settings };
+    alto::Alto alto{ ocrDocument, image };
+    alto.description.processings = create_alto_processings(settings);
+    for (auto& processing : alto.description.processings) {
+        if (processing.processingStepDescription == "TextDetection") {
+            processing.processingDateTime = textDetectionDateTime;
+        } else if (processing.processingStepDescription == "TextAngleClassification") {
+            processing.processingDateTime = textAngleClassificationDateTime;
+        } else if (processing.processingStepDescription == "TextRecognition") {
+            processing.processingDateTime = textRecognitionDateTime;
+        } else {
+            processing.processingDateTime = create_processing_date_time();
+        }
+    }
     if (!write_file(task.outputPath, alto::to_xml(alto))) {
         log::error("Failed to write AltoXML file: {}", task.outputPath);
     }

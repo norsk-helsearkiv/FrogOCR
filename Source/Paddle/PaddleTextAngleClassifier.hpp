@@ -6,7 +6,7 @@
 
 namespace frog {
 
-struct PaddleTextOrientationClassifierConfig;
+struct PaddleTextAngleClassifierConfig;
 class Image;
 
 struct Classification {
@@ -18,9 +18,9 @@ struct Classification {
     }
 };
 
-struct PaddleTextOrientationClassifier {
+struct PaddleTextAngleClassifier {
 
-    PaddleTextOrientationClassifier(const PaddleTextOrientationClassifierConfig& config);
+    PaddleTextAngleClassifier(const PaddleTextAngleClassifierConfig& config);
 
     std::vector<Classification> classify(const Image& image, const std::vector<Quad>& quads);
 

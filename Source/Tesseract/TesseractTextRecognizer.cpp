@@ -74,7 +74,7 @@ void on_symbol(Word& word, BuildState buildState, tesseract::ResultIterator* sym
         if (auto choiceText = symbolChoiceIterator.GetUTF8Text(); choiceText && symbol.text != choiceText) {
             Variant variant;
             variant.text = choiceText;
-            variant.confidence = { symbolChoiceIterator.Confidence(), Confidence::Format::normalized };
+            variant.confidence = { symbolChoiceIterator.Confidence(), Confidence::Format::percent };
             symbol.variants.push_back(variant);
         }
     } while (symbolChoiceIterator.Next());
@@ -135,7 +135,6 @@ void on_line(Paragraph& paragraph, BuildState buildState, std::vector<Font>& fon
     line.height -= line.y;
     line.x += buildState.offsetX;
     line.y += buildState.offsetY;
-    line.angleInDegrees = buildState.lineAngleInDegrees;
     auto wordIterator = lineIterator;
     do {
         on_word(line, buildState, fonts, wordIterator);
@@ -156,6 +155,7 @@ void on_paragraph(Block& block, BuildState buildState, std::vector<Font>& fonts,
     paragraph.height -= paragraph.y;
     paragraph.x += buildState.offsetX;
     paragraph.y += buildState.offsetY;
+    paragraph.angleInDegrees = buildState.lineAngleInDegrees;
     auto lineIterator = paragraphIterator;
     do {
         on_line(paragraph, buildState, fonts, lineIterator);
@@ -217,7 +217,7 @@ TesseractTextRecognizer::TesseractTextRecognizer(const TesseractConfig& config) 
     setTesseractVariable(tesseract, "tessedit_write_images", "true");
 }
 
-Document TesseractTextRecognizer::recognize(const Image& image, const std::vector<Quad>& quads, const std::vector<int>& angles, const TextRecognitionSettings& settings) {
+Document TesseractTextRecognizer::recognize(const Image& image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) {
     Document document;
     BuildState buildState;
 
@@ -254,6 +254,7 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
         for (const auto& quad : quads) {
             auto clippedPix = copy_pixels_in_quad(image.getPix(), quad);
             auto rotatedPix = pixRotate(clippedPix, -quad.bottomRightToLeftAngle(), L_ROTATE_AREA_MAP, L_BRING_IN_WHITE, 0, 0);
+            // Rotate according to input angle.
             if (angles[quadIndex] == 180) {
                 pixRotate180(rotatedPix, rotatedPix);
             }
@@ -264,14 +265,26 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
                 auto quadConfidence = getConfidence(tesseract).getNormalized();
                 // TODO: Improve this nested if mess, but for now it's a quick and dirty way to test how well it works.
                 if (quadConfidence < 0.4f) {
+                    // Rotate again to see if we get a better result.
                     pixRotate180(rotatedPix, rotatedPix);
+                    if (angles[quadIndex] == 0) {
+                        angles[quadIndex] = 180;
+                    } else {
+                        angles[quadIndex] = 0;
+                    }
                     tesseract.SetImage(rotatedPix);
                     recognize_all(tesseract);
                     resultIterator = tesseract.GetIterator();
                     if (resultIterator) {
                         quadConfidence = getConfidence(tesseract).getNormalized();
                         if (quadConfidence < 0.4f) {
+                            // Rotate back to original input angle, because it is more likely to be correct.
                             pixRotate180(rotatedPix, rotatedPix);
+                            if (angles[quadIndex] == 0) {
+                                angles[quadIndex] = 180;
+                            } else {
+                                angles[quadIndex] = 0;
+                            }
                             tesseract.SetImage(rotatedPix);
                             resultIterator = tesseract.GetIterator();
                             if (resultIterator) {
@@ -295,6 +308,19 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
         }
         document.confidence = { confidence, Confidence::Format::normalized };
     }
+
+    std::unordered_map<int, int> angleCounts;
+    for (const auto& angle : angles) {
+        angleCounts[angle]++;
+    }
+    int mostUsedAngle{};
+    for (const auto& [angle, count] : angleCounts) {
+        if (count > angleCounts[mostUsedAngle]) {
+            mostUsedAngle = angle;
+        }
+    }
+    document.rotationInDegrees = static_cast<float>(mostUsedAngle);
+
     return document;
 }
 

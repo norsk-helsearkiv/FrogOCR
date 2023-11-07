@@ -37,8 +37,8 @@ PaddleTextDetectorConfig load_paddle_text_detector_config_xml(xml::Node rootNode
     return config;
 }
 
-PaddleTextOrientationClassifierConfig load_paddle_orientation_classifier_config_xml(xml::Node rootNode) {
-    PaddleTextOrientationClassifierConfig config;
+PaddleTextAngleClassifierConfig load_paddle_orientation_classifier_config_xml(xml::Node rootNode) {
+    PaddleTextAngleClassifierConfig config;
     for (auto node : rootNode.getChildren()) {
         if (node.getName() == "Model") {
             config.model = node.getContent();
@@ -57,7 +57,7 @@ Profile load_profile_xml(xml::Node rootNode) {
             profile.tesseract = load_tesseract_config_xml(node);
         } else if (node.getName() == "PaddleTextDetector") {
             profile.paddleTextDetector = load_paddle_text_detector_config_xml(node);
-        } else if (node.getName() == "PaddleOrientationClassifier") {
+        } else if (node.getName() == "PaddleTextAngleClassifier") {
             profile.paddleTextOrientationClassifier = load_paddle_orientation_classifier_config_xml(node);
         }
     }

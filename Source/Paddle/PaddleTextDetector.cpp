@@ -305,20 +305,19 @@ std::vector<Quad> PaddleTextDetector::detect(const Image& image, const TextDetec
     std::vector<unsigned char> cbuf(n, ' ');
 
     for (int i = 0; i < n; i++) {
-        pred[i] = float(out_data[i]);
-        cbuf[i] = (unsigned char) ((out_data[i]) * 255);
+        pred[i] = out_data[i];
+        cbuf[i] = static_cast<unsigned char>(out_data[i] * 255.0f);
     }
 
-    cv::Mat cbuf_map(n2, n3, CV_8UC1, (unsigned char*) cbuf.data());
-    cv::Mat pred_map(n2, n3, CV_32F, (float*) pred.data());
+    cv::Mat cbuf_map(n2, n3, CV_8UC1, cbuf.data());
+    cv::Mat pred_map(n2, n3, CV_32F, pred.data());
 
     const double det_db_threshold{ 0.3 };
-    const double threshold = det_db_threshold * 255.0;
-    const double maxvalue = 255.0;
+    const auto threshold = det_db_threshold * 255.0;
+    const double maxvalue{ 255.0 };
     cv::Mat bit_map;
     cv::threshold(cbuf_map, bit_map, threshold, maxvalue, cv::THRESH_BINARY);
-    bool use_dilation{ false };
-    if (use_dilation) {
+    if (settings.find("Paddle.UseDilation") == "true") {
         cv::Mat dila_ele = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2, 2));
         cv::dilate(bit_map, bit_map, dila_ele);
     }

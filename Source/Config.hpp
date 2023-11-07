@@ -18,7 +18,7 @@ struct PaddleTextRecognizerConfig {
     std::filesystem::path labels;
 };
 
-struct PaddleTextOrientationClassifierConfig {
+struct PaddleTextAngleClassifierConfig {
     std::filesystem::path model;
 };
 
@@ -26,7 +26,7 @@ struct Profile {
     std::string name;
     std::optional<TesseractConfig> tesseract;
     std::optional<PaddleTextDetectorConfig> paddleTextDetector;
-    std::optional<PaddleTextOrientationClassifierConfig> paddleTextOrientationClassifier;
+    std::optional<PaddleTextAngleClassifierConfig> paddleTextOrientationClassifier;
 };
 
 struct DatabaseConfig {

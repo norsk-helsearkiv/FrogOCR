@@ -12,7 +12,6 @@ struct TextLine {
     int vpos{};
     int width{};
     int height{};
-    float rotation{};
     std::optional<int> styleRefs;
     std::vector<String> strings;
 

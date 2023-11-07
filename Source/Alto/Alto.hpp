@@ -7,7 +7,6 @@
 namespace frog {
 class Image;
 class Document;
-class Settings;
 }
 
 namespace frog::alto {
@@ -19,7 +18,7 @@ struct Alto {
     Layout layout;
 
 	Alto(const std::filesystem::path& path);
-	Alto(const Document& document, const Image& image, const Settings& settings);
+	Alto(const Document& document, const Image& image);
 	Alto() = default;
 
 };

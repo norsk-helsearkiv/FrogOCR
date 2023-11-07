@@ -21,7 +21,7 @@ class Connection;
 
 namespace frog::about {
 constexpr std::string_view creator{ "Norsk helsearkiv" };
-constexpr std::string_view name{ "FrogOCR" };
+constexpr std::string_view name{ "Frog" };
 constexpr std::string_view version{ "1.6.0" };
 constexpr std::string_view build_date{ __DATE__ };
 }
@@ -37,5 +37,8 @@ std::vector<Task> fetch_next_tasks(const database::Connection& database, int cou
 std::filesystem::path launch_path();
 std::stack<std::string_view> launch_arguments();
 std::string version_with_build_date();
+std::string get_tesseract_version();
+std::string get_paddle_version();
+std::string get_opencv_version();
 
 }

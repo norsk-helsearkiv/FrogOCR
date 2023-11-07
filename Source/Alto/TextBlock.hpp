@@ -10,6 +10,7 @@ struct TextBlock {
     int vpos{};
     int width{};
     int height{};
+    float rotation{};
     std::vector<TextLine> textLines;
 
 	TextBlock(TextLine textLine);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "PaddleTextOrientationClassifier.hpp"
+#include "PaddleTextAngleClassifier.hpp"
 #include "PaddleTextDetector.hpp"
 #include "Recognition.hpp"
 #include "Config.hpp"

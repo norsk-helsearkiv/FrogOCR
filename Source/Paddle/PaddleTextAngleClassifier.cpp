@@ -1,4 +1,4 @@
-#include "PaddleTextOrientationClassifier.hpp"
+#include "PaddleTextAngleClassifier.hpp"
 #include "Preprocessing.hpp"
 #include "Postprocessing.hpp"
 #include "Config.hpp"
@@ -57,7 +57,7 @@ cv::Mat get_rotated_cropped_image(const cv::Mat& srcimage, Quad quad) {
     }
 }
 
-PaddleTextOrientationClassifier::PaddleTextOrientationClassifier(const PaddleTextOrientationClassifierConfig& config) {
+PaddleTextAngleClassifier::PaddleTextAngleClassifier(const PaddleTextAngleClassifierConfig& config) {
     if (!std::filesystem::exists(config.model)) {
         log::error("Unable to find detection model at configured path: {}", config.model);
         return;
@@ -79,7 +79,7 @@ PaddleTextOrientationClassifier::PaddleTextOrientationClassifier(const PaddleTex
     predictor = paddle_infer::CreatePredictor(paddleConfig);
 }
 
-std::vector<Classification> PaddleTextOrientationClassifier::classify(const Image& image, const std::vector<Quad>& quads) {
+std::vector<Classification> PaddleTextAngleClassifier::classify(const Image& image, const std::vector<Quad>& quads) {
     std::vector<int> cls_image_shape{ 3, 48, 192 };
     const auto image_matrix = pix_to_mat(image.getPix());
     std::vector<Classification> classifications;

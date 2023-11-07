@@ -4,7 +4,7 @@
 #include "IntegratedTextDetector.hpp"
 #include "Paddle/PaddleTextDetector.hpp"
 #include "Tesseract/TesseractTextRecognizer.hpp"
-#include "Paddle/PaddleTextOrientationClassifier.hpp"
+#include "Paddle/PaddleTextAngleClassifier.hpp"
 #include "Application.hpp"
 #include "Core/Log.hpp"
 #include "Alto/Alto.hpp"
@@ -47,7 +47,7 @@ private:
     std::unique_ptr<IntegratedTextDetector> integratedTextDetector;
     std::unique_ptr<PaddleTextDetector> paddleTextDetector;
     std::unique_ptr<TesseractTextRecognizer> tesseractTextRecognizer;
-    std::unique_ptr<PaddleTextOrientationClassifier> paddleTextOrientationClassifier;
+    std::unique_ptr<PaddleTextAngleClassifier> paddleTextAngleClassifier;
 
 };
 

@@ -45,7 +45,6 @@ struct Line {
     int y{};
     int width{};
     int height{};
-    float angleInDegrees{};
     std::vector<Word> words;
     Confidence confidence;
     std::optional<int> styleRefs;
@@ -56,6 +55,7 @@ struct Paragraph {
     int y{};
     int width{};
     int height{};
+    float angleInDegrees{};
     std::vector<Line> lines;
     Confidence confidence;
 };
@@ -70,6 +70,10 @@ struct Block {
 };
 
 struct Document {
+    std::string language;
+    int physicalImageNumber{};
+    float rotationInDegrees{};
+
     std::vector<Font> fonts;
     std::vector<Block> blocks;
     Confidence confidence;

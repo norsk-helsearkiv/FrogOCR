@@ -10,7 +10,9 @@ public:
 	Confidence(float confidence, Format format) {
 		if (format == Format::percent) {
 			normalizedConfidence = confidence / 100.0f;
-		}
+		} else {
+            normalizedConfidence = confidence;
+        }
 	}
 
 	Confidence() = default;

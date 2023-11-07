@@ -22,7 +22,7 @@ public:
     TextRecognizer& operator=(const TextRecognizer&) = delete;
     TextRecognizer& operator=(TextRecognizer&&) = delete;
 
-    virtual Document recognize(const Image& image, const std::vector<Quad>& quads, const std::vector<int>& angles, const TextRecognitionSettings& settings) = 0;
+    virtual Document recognize(const Image& image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) = 0;
 
 };
 

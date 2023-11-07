@@ -45,6 +45,19 @@ std::string version_with_build_date() {
     return fmt::format("{} (build date: {})", about::version, about::build_date);
 }
 
+std::string get_tesseract_version() {
+    return tesseract::TessBaseAPI::Version();
+}
+
+std::string get_paddle_version() {
+    // TODO: Figure out why get_version() returns 0.0.0... It seems to be a CMake issue.
+    return "2.5.1";
+}
+
+std::string get_opencv_version() {
+    return cv::getVersionString();
+}
+
 void delete_task(const database::Connection& database, std::int64_t taskId) {
     database.execute(R"(delete from task where task_id = $1)", { std::to_string(taskId) });
 }
@@ -60,9 +73,9 @@ void add_task(const database::Connection& database, std::string_view inputPath, 
 
 void show_versions() {
     fmt::print("Frog {} (build date: {})\n", about::version, about::build_date);
-    fmt::print("Tesseract {}\n", tesseract::TessBaseAPI::Version());
-    fmt::print("Paddle {}\n", "2.5.1"); // TODO: Figure out why get_version() returns 0.0.0... It seems to be a CMake issue.
-    fmt::print("OpenCV {}\n", cv::getVersionString());
+    fmt::print("Tesseract {}\n", get_tesseract_version());
+    fmt::print("Paddle {}\n", get_paddle_version());
+    fmt::print("OpenCV {}\n", get_opencv_version());
 }
 
 void show_command_help(std::string_view command) {
@@ -115,11 +128,8 @@ void cli_add(std::stack<std::string_view> arguments, const Config& config) {
     std::optional<std::filesystem::path> addTasksOutputPath;
     std::string newTasksCustomData1;
     std::int64_t newTasksCustomData2{};
-    TextDetectionSettings textDetectionSettings;
-    TextRecognitionSettings textRecognitionSettings;
     int priority{};
-    bool overwriteOutput{};
-    std::string orientationClassifier;
+    Settings settings;
     while (!arguments.empty()) {
         const auto argument = arguments.top();
         arguments.pop();
@@ -153,23 +163,15 @@ void cli_add(std::stack<std::string_view> arguments, const Config& config) {
             } else {
                 fmt::print("No integer specified with --custom-data-2.\n");
             }
-        } else if (argument == "--text-detector") {
-            if (!arguments.empty()) {
-                textDetectionSettings.textDetector = arguments.top();
+        } else if (argument == "--setting") {
+            if (arguments.size() >= 2) {
+                const auto key = arguments.top();
                 arguments.pop();
-            } else {
-                fmt::print("No text detector specified with --text-detector.\n");
-            }
-        } else if (argument == "--sauvola-k-factor") {
-            if (!arguments.empty()) {
-                if (const auto maybeFactor = from_string<float>(arguments.top())) {
-                    textRecognitionSettings.sauvolaKFactor = maybeFactor.value();
-                } else {
-                    fmt::print("Invalid decimal number specified with --sauvola-k-factor.\n");
-                }
+                const auto value = arguments.top();
                 arguments.pop();
+                settings.set(key, value);
             } else {
-                fmt::print("No decimal number specified with --sauvola-k-factor.\n");
+                fmt::print("No setting given with --setting.\n");
             }
         } else if (argument == "--priority") {
             if (!arguments.empty()) {
@@ -181,15 +183,6 @@ void cli_add(std::stack<std::string_view> arguments, const Config& config) {
                 arguments.pop();
             } else {
                 fmt::print("No integer specified with --priority.\n");
-            }
-        } else if (argument == "--overwrite-output") {
-            overwriteOutput = true;
-        } else if (argument == "--orientation-classifier") {
-            if (!arguments.empty()) {
-                orientationClassifier = arguments.top();
-                arguments.pop();
-            } else {
-                fmt::print("No orientation classifier specified with --orientation-classifier.\n");
             }
         }
     }
@@ -228,15 +221,11 @@ void cli_add(std::stack<std::string_view> arguments, const Config& config) {
     }
     const auto& databaseConfig = config.databases[addTasksDatabaseIndex];
     const database::Connection database{ databaseConfig.host, databaseConfig.port, databaseConfig.name, databaseConfig.username, databaseConfig.password };
-    std::string_view pageSegmentation{ "Block" };
-    if (textDetectionSettings.textDetector == "Paddle") {
-        pageSegmentation = "Line";
-    }
-    const auto settings = fmt::format("SauvolaKFactor={},TextDetector={},PageSegmentation={},OverwriteOutput={},OrientationClassifier={}", textRecognitionSettings.sauvolaKFactor, textDetectionSettings.textDetector, pageSegmentation, overwriteOutput ? "true" : "false", orientationClassifier);
+    const auto& settingsCsv = settings.csv();
     for (const auto& [inputPath, outputPath] : newTaskPaths) {
         const auto inputPathString = path_to_string(inputPath);
         const auto outputPathString = path_to_string(outputPath);
-        add_task(database, inputPathString, outputPathString, priority, newTasksCustomData1, newTasksCustomData2, settings);
+        add_task(database, inputPathString, outputPathString, priority, newTasksCustomData1, newTasksCustomData2, settingsCsv);
     }
 }
 
@@ -396,8 +385,8 @@ void start() {
     }
 
     xml::library::resolveExternalResourceToLocalFile([&config](std::string_view url) -> std::optional<std::filesystem::path> {
-        if (url == "http://www.loc.gov/standards/alto/alto-4-2.xsd" || url == "alto-4-2.xsd") {
-            return config.schemas / "alto-4-2.xsd";
+        if (url == "http://www.loc.gov/standards/alto/alto-4-4.xsd" || url == "alto-4-4.xsd") {
+            return config.schemas / "alto-4-4.xsd";
         } else if (url == "http://www.loc.gov/standards/xlink/xlink.xsd") {
             return config.schemas / "xlink.xsd";
         } else {

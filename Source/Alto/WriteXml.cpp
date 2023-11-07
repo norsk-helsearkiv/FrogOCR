@@ -77,9 +77,6 @@ void append_text_line_xml(std::string& xml, std::string_view id, const TextLine&
     if (textLine.styleRefs.has_value()) {
         xml += fmt::format(" STYLEREFS=\"textstyle_{}\"", textLine.styleRefs.value());
     }
-    if (textLine.rotation != 0.0f) {
-        xml += fmt::format(" ROTATION=\"{}\"", textLine.rotation);
-    }
     xml += ">\n";
     int index{ 0 };
     for (const auto& string: textLine.strings) {
@@ -97,7 +94,7 @@ void append_string_xml(std::string& xml, std::string_view id, const String& stri
     if (string.styleRefs.has_value()) {
         xml += fmt::format(" STYLEREFS=\"textstyle_{}\"", string.styleRefs.value());
     }
-    if (string.rotation != 0.0f) {
+    if (std::abs(string.rotation) > std::numeric_limits<float>::epsilon()) {
         xml += fmt::format(" ROTATION=\"{}\"", string.rotation);
     }
     if (string.glyphs.empty()) {
@@ -165,7 +162,16 @@ void append_text_style_xml(std::string& xml, std::string_view id, const TextStyl
 }
 
 void append_page_xml(std::string& xml, std::string_view id, const Page& page) {
-    xml += fmt::format("\t\t<Page ID=\"{}\" WIDTH=\"{}\" HEIGHT=\"{}\" PHYSICAL_IMG_NR=\"{}\" PC=\"{:.2}\">\n", id, page.width, page.height, page.physicalImageNumber, page.confidence);
+    xml += fmt::format("\t\t<Page ID=\"{}\"", id);
+    if (!page.language.empty()) {
+        xml += fmt::format(" LANG=\"{}\"", page.language);
+    }
+    xml += fmt::format(" WIDTH=\"{}\" HEIGHT=\"{}\"", page.width, page.height);
+    xml += fmt::format(" PHYSICAL_IMG_NR=\"{}\" PC=\"{:.2}\"", page.physicalImageNumber, page.confidence);
+    if (std::abs(page.rotationInDegrees) > std::numeric_limits<float>::epsilon()) {
+        xml += fmt::format(" ROTATION=\"{}\"", page.rotationInDegrees);
+    }
+    xml += ">\n";
     int index{};
     for (const auto& printSpace: page.printSpaces) {
         append_print_space_xml(xml, fmt::format("{}_ps_{}", id, index), printSpace);
@@ -207,7 +213,12 @@ void append_composed_block_xml(std::string& xml, std::string_view id, const Comp
 std::string to_xml(const Alto& alto) {
     constexpr std::string_view xml_tag{ "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" };
     constexpr std::string_view alto_tag{
-        "<alto xmlns=\"http://www.loc.gov/standards/alto/ns-v4#\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://www.loc.gov/standards/alto/ns-v4# http://www.loc.gov/standards/alto/alto-4-2.xsd\">\n"
+        "<alto"
+        " xmlns=\"http://www.loc.gov/standards/alto/ns-v4#\""
+        " xmlns:xlink=\"http://www.w3.org/1999/xlink\""
+        " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
+        " xsi:schemaLocation=\"http://www.loc.gov/standards/alto/ns-v4# http://www.loc.gov/standards/alto/alto-4-4.xsd\""
+        ">\n"
     };
     std::string xml;
     xml.reserve(100000);
@@ -228,7 +239,11 @@ void append_text_block_xml(std::string& xml, std::string_view id, const TextBloc
     if (textBlock.textLines.empty()) {
         return;
     }
-    xml += fmt::format("\t\t\t\t\t<TextBlock ID=\"{}\" HPOS=\"{}\" VPOS=\"{}\" WIDTH=\"{}\" HEIGHT=\"{}\">\n", id, textBlock.hpos, textBlock.vpos, textBlock.width, textBlock.height);
+    xml += fmt::format("\t\t\t\t\t<TextBlock ID=\"{}\" HPOS=\"{}\" VPOS=\"{}\" WIDTH=\"{}\" HEIGHT=\"{}\"", id, textBlock.hpos, textBlock.vpos, textBlock.width, textBlock.height);
+    if (std::abs(textBlock.rotation) > std::numeric_limits<float>::epsilon()) {
+        xml += fmt::format(" ROTATION=\"{}\"", textBlock.rotation);
+    }
+    xml += ">\n";
     int index{ 0 };
     for (const auto& textLine: textBlock.textLines) {
         append_text_line_xml(xml, fmt::format("{}_l_{}", id, index), textLine);
