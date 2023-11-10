@@ -4,6 +4,12 @@
 
 namespace frog {
 
+struct SambaCredentialsConfig {
+    std::string username;
+    std::string password;
+    std::string workgroup;
+};
+
 struct TesseractConfig {
     std::filesystem::path tessdata;
     std::string dataset;
@@ -40,9 +46,11 @@ struct DatabaseConfig {
 struct Config {
 
     int maxThreadCount{};
+    int maxTasksPerThread{ 50 };
     std::filesystem::path schemas;
     std::vector<DatabaseConfig> databases;
     std::vector<Profile> profiles;
+    std::vector<SambaCredentialsConfig> sambaCredentials;
 
     Config() = default;
     Config(xml::Document document);

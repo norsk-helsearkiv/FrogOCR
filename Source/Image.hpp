@@ -14,6 +14,7 @@ public:
 
     Image(PIX* pix);
 	Image(std::filesystem::path path);
+    Image(const char* buffer, std::size_t size);
 	Image(const Image&) = delete;
 	Image(Image&&) = delete;
 

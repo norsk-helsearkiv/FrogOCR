@@ -3,11 +3,11 @@
 #include "paddle_api.h"
 #include "paddle_inference_api.h"
 #include "utility.hpp"
+#include "Image.hpp"
 
 namespace frog {
 
 struct PaddleTextAngleClassifierConfig;
-class Image;
 
 struct Classification {
     unsigned int label{};
@@ -22,7 +22,7 @@ struct PaddleTextAngleClassifier {
 
     PaddleTextAngleClassifier(const PaddleTextAngleClassifierConfig& config);
 
-    std::vector<Classification> classify(const Image& image, const std::vector<Quad>& quads);
+    std::vector<Classification> classify(PIX* image, const std::vector<Quad>& quads);
 
 private:
 

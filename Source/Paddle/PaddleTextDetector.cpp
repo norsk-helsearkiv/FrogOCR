@@ -241,6 +241,7 @@ std::vector<Quad> filter_tag_det_res(std::vector<Quad> boxes, float ratio_h, flo
 }
 
 PaddleTextDetector::PaddleTextDetector(const PaddleTextDetectorConfig& config) {
+    log::info("Initializing Paddle text detector ({})", config.model);
     if (!std::filesystem::exists(config.model)) {
         log::error("Unable to find detection model at configured path: {}", config.model);
         return;
@@ -283,15 +284,22 @@ std::vector<Quad> PaddleTextDetector::detect(const Image& image, const TextDetec
 
     auto input_names = predictor->GetInputNames();
     auto input_t = predictor->GetInputHandle(input_names[0]);
+    if (!input_t) {
+        log::error("Input is nullptr.");
+        return {};
+    }
     input_t->Reshape({ 1, 3, resize_img.rows, resize_img.cols });
-    auto inference_start = std::chrono::steady_clock::now();
     input_t->CopyFromCpu(input.data());
     predictor->Run();
 
     std::vector<float> out_data;
     auto output_names = predictor->GetOutputNames();
     auto output_t = predictor->GetOutputHandle(output_names[0]);
-    std::vector<int> output_shape = output_t->shape();
+    if (!output_t) {
+        log::error("Output is nullptr.");
+        return {};
+    }
+    auto output_shape = output_t->shape();
     int out_num = std::accumulate(output_shape.begin(), output_shape.end(), 1, std::multiplies<int>());
 
     out_data.resize(out_num);
@@ -318,7 +326,7 @@ std::vector<Quad> PaddleTextDetector::detect(const Image& image, const TextDetec
     cv::Mat bit_map;
     cv::threshold(cbuf_map, bit_map, threshold, maxvalue, cv::THRESH_BINARY);
     if (settings.find("Paddle.UseDilation") == "true") {
-        cv::Mat dila_ele = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2, 2));
+        auto dila_ele = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2, 2));
         cv::dilate(bit_map, bit_map, dila_ele);
     }
     float det_db_box_threshold{ 0.6f };

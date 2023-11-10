@@ -63,19 +63,6 @@ void recognition_resize_image(const cv::Mat& img, cv::Mat& resize_img, float wh_
     cv::copyMakeBorder(resize_img, resize_img, 0, 0, 0, int(imgW - resize_img.cols), cv::BORDER_CONSTANT, { 0, 0, 0 });
 }
 
-void classification_resize_image(const cv::Mat& img, cv::Mat& resize_img, const std::vector<int>& rec_image_shape) {
-    int imgH = rec_image_shape[1];
-    int imgW = rec_image_shape[2];
-    float ratio = float(img.cols) / float(img.rows);
-    int resize_w, resize_h;
-    if (ceilf(imgH * ratio) > imgW) {
-        resize_w = imgW;
-    } else {
-        resize_w = int(ceilf(imgH * ratio));
-    }
-    cv::resize(img, resize_img, cv::Size(resize_w, imgH), 0.f, 0.0f, cv::INTER_LINEAR);
-}
-
 void table_resize_image(const cv::Mat& img, cv::Mat& resize_img, int max_len) {
     int w = img.cols;
     int h = img.rows;

@@ -71,7 +71,7 @@ std::vector<std::filesystem::path> entries_in_directory(std::filesystem::path pa
 }
 
 std::vector<std::filesystem::path> files_in_directory(std::filesystem::path path, bool recursive, std::optional<std::string_view> extension, std::size_t preallocated) {
-	return entries_in_directory(path, entry_inclusion::only_files, true, extension ? [extension](const std::filesystem::path& path) {
+	return entries_in_directory(path, entry_inclusion::only_files, recursive, extension ? [extension](const std::filesystem::path& path) {
 		return path.extension() == extension.value();
 	} : std::function<bool(const std::filesystem::path&)>{}, preallocated);
 }

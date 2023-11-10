@@ -1,4 +1,6 @@
 #include "TaskProcessor.hpp"
+#include "Core/SambaClient.hpp"
+#include "Application.hpp"
 
 namespace frog {
 
@@ -138,21 +140,51 @@ int TaskProcessor::getRemainingTaskCount() const {
 }
 
 void TaskProcessor::doTask(const Task& task) {
+    log::info("{}", task.inputPath);
+
     const Settings settings{ task.settingsCsv };
 
     // Pre-checks
-    if (!settings.overwriteOutput && std::filesystem::exists(task.outputPath)) {
-        log::warning("Output file already exists: %cyan{}", task.outputPath);
-        return;
-    }
-    if (!std::filesystem::exists(task.inputPath)) {
-        log::error("Input file does not exist: %cyan{}", task.inputPath);
-        return;
+    SambaClient* sambaClient{};
+    if (task.inputPath.starts_with("smb://")) {
+        sambaClient = acquire_samba_client();
+        if (!sambaClient) {
+            log::error("Samba client not configured. Skipping task {}", task.inputPath);
+            return;
+        }
+        if (!settings.overwriteOutput && sambaClient->exists(task.outputPath)) {
+            release_samba_client();
+            log::warning("Output file already exists: %cyan{}", task.outputPath);
+            return;
+        }
+        if (!sambaClient->exists(task.inputPath)) {
+            release_samba_client();
+            log::error("Input file does not exist: %cyan{}", task.inputPath);
+            return;
+        }
+    } else {
+        if (!settings.overwriteOutput && std::filesystem::exists(task.outputPath)) {
+            log::warning("Output file already exists: %cyan{}", task.outputPath);
+            return;
+        }
+        if (!std::filesystem::exists(task.inputPath)) {
+            log::error("Input file does not exist: %cyan{}", task.inputPath);
+            return;
+        }
     }
 
     // Initialize
-    Image image{ task.inputPath };
-    if (!image.isOk()) {
+    std::unique_ptr<Image> image;
+    if (task.inputPath.starts_with("smb://")) {
+        const auto data = sambaClient->readFile(task.inputPath);
+        release_samba_client();
+        if (data) {
+            image = std::make_unique<Image>(data->data(), data->size());
+        }
+    } else {
+        image = std::make_unique<Image>(task.inputPath);
+    }
+    if (!image || !image->isOk()) {
         log::error("Failed to load image: %cyan{}", task.inputPath);
         return;
     }
@@ -162,6 +194,10 @@ void TaskProcessor::doTask(const Task& task) {
         textDetector = paddleTextDetector.get();
     } else {
         textDetector = integratedTextDetector.get();
+    }
+    if (!textDetector) {
+        log::error("No text detector.");
+        return;
     }
 
     TextRecognizer* textRecognizer{};
@@ -174,17 +210,65 @@ void TaskProcessor::doTask(const Task& task) {
         log::error("Unknown text recognizer: {}", settings.recognition.textRecognizer);
         return;
     }
+    if (!textRecognizer) {
+        log::error("No text recognizer.");
+        return;
+    }
 
     // Text Detection
     const auto textDetectionDateTime = create_processing_date_time();
-    const auto& quads = textDetector->detect(image, settings.detection);
+    const auto& quads = textDetector->detect(*image, settings.detection);
 
     // Text Angle Classification
     const auto textAngleClassificationDateTime = create_processing_date_time();
+    const auto& angles = runTextAngleClassifier(quads, settings, image->getPix());
+
+    // Text Recognition
+    const auto textRecognitionDateTime = create_processing_date_time();
+    auto ocrDocument = textRecognizer->recognize(*image, quads, angles, settings.recognition);
+
+    // Create Alto
+    alto::Alto alto{ ocrDocument, task.inputPath, image->getWidth(), image->getHeight() };
+    alto.description.processings = create_alto_processings(settings);
+    for (auto& processing : alto.description.processings) {
+        if (processing.processingStepDescription == "TextDetection") {
+            processing.processingDateTime = textDetectionDateTime;
+        } else if (processing.processingStepDescription == "TextAngleClassification") {
+            processing.processingDateTime = textAngleClassificationDateTime;
+        } else if (processing.processingStepDescription == "TextRecognition") {
+            processing.processingDateTime = textRecognitionDateTime;
+        } else {
+            processing.processingDateTime = create_processing_date_time();
+        }
+    }
+    const auto altoXml = alto::to_xml(alto);
+
+    // Save
+    if (task.outputPath.starts_with("smb://")) {
+        sambaClient = acquire_samba_client();
+        if (!sambaClient->writeFile(task.outputPath, altoXml)) {
+            log::error("Failed to write AltoXML file: {}", task.outputPath);
+        }
+        release_samba_client();
+    } else {
+        if (!write_file(task.outputPath, altoXml)) {
+            log::error("Failed to write AltoXML file: {}", task.outputPath);
+        }
+    }
+}
+
+std::vector<int> TaskProcessor::runTextAngleClassifier(const std::vector<Quad>& quads, const Settings& settings, PIX* pix) {
     std::vector<int> angles;
     angles.resize(quads.size(), 0);
-    if (paddleTextAngleClassifier && settings.textAngleClassifier == "Paddle") {
-        const auto& classifications = paddleTextAngleClassifier->classify(image, quads);
+    if (!paddleTextAngleClassifier) {
+        return angles;
+    }
+    if (settings.textAngleClassifier == "Paddle") {
+        const auto& classifications = paddleTextAngleClassifier->classify(pix, quads);
+        if (classifications.size() != quads.size()) {
+            log::error("The number of text angle classifications ({}) and quads ({}) do not match.", classifications.size(), quads.size());
+            return angles;
+        }
         std::size_t angledCount{};
         for (std::size_t i{}; i < quads.size(); i++) {
             if (classifications[i].angle() == 180 && classifications[i].confidence > 0.95f) {
@@ -201,28 +285,7 @@ void TaskProcessor::doTask(const Task& task) {
             }
         }
     }
-
-    // Text Recognition
-    const auto textRecognitionDateTime = create_processing_date_time();
-    auto ocrDocument = textRecognizer->recognize(image, quads, angles, settings.recognition);
-
-    // Create Alto
-    alto::Alto alto{ ocrDocument, image };
-    alto.description.processings = create_alto_processings(settings);
-    for (auto& processing : alto.description.processings) {
-        if (processing.processingStepDescription == "TextDetection") {
-            processing.processingDateTime = textDetectionDateTime;
-        } else if (processing.processingStepDescription == "TextAngleClassification") {
-            processing.processingDateTime = textAngleClassificationDateTime;
-        } else if (processing.processingStepDescription == "TextRecognition") {
-            processing.processingDateTime = textRecognitionDateTime;
-        } else {
-            processing.processingDateTime = create_processing_date_time();
-        }
-    }
-    if (!write_file(task.outputPath, alto::to_xml(alto))) {
-        log::error("Failed to write AltoXML file: {}", task.outputPath);
-    }
+    return angles;
 }
 
 }

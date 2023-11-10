@@ -3,12 +3,18 @@
 #include "Postprocessing.hpp"
 #include "Config.hpp"
 #include "Core/Log.hpp"
-#include "Image.hpp"
 #include "opencv2/imgproc.hpp"
 
 namespace frog {
 
-cv::Mat get_rotated_cropped_image(const cv::Mat& srcimage, Quad quad) {
+static void classification_resize_image(const cv::Mat& img, cv::Mat& resize_img, int width, int height) {
+    const auto ratio = static_cast<float>(img.cols) / static_cast<float>(img.rows);
+    const auto heightRatio = static_cast<int>(std::ceil(static_cast<float>(height) * ratio));
+    const cv::Size size{ heightRatio > width ? width : heightRatio, height };
+    cv::resize(img, resize_img, size, 0.0f, 0.0f, cv::INTER_LINEAR);
+}
+
+static cv::Mat get_rotated_cropped_image(const cv::Mat& srcimage, Quad quad) {
     const auto left = quad.left();
     const auto top = quad.top();
 
@@ -62,7 +68,7 @@ PaddleTextAngleClassifier::PaddleTextAngleClassifier(const PaddleTextAngleClassi
         log::error("Unable to find detection model at configured path: {}", config.model);
         return;
     }
-    fmt::print("Initializing Paddle classifier ({})\n", config.model);
+    log::info("Initializing Paddle text angle classifier ({})", config.model);
     const auto model_directory = path_to_string(config.model);
     paddle_infer::Config paddleConfig;
     paddleConfig.SetModel(model_directory + "/inference.pdmodel", model_directory + "/inference.pdiparams");
@@ -79,37 +85,57 @@ PaddleTextAngleClassifier::PaddleTextAngleClassifier(const PaddleTextAngleClassi
     predictor = paddle_infer::CreatePredictor(paddleConfig);
 }
 
-std::vector<Classification> PaddleTextAngleClassifier::classify(const Image& image, const std::vector<Quad>& quads) {
-    std::vector<int> cls_image_shape{ 3, 48, 192 };
-    const auto image_matrix = pix_to_mat(image.getPix());
+std::vector<Classification> PaddleTextAngleClassifier::classify(PIX* pix, const std::vector<Quad>& quads) {
+    constexpr int tensor1{ 3 }; // I don't know what this is for.
+    constexpr int width{ 192 };
+    constexpr int height{ 48 };
+
+    const auto image_matrix = pix_to_mat(pix);
     std::vector<Classification> classifications;
     classifications.reserve(quads.size());
     for (const auto& quad : quads) {
         auto quad_matrix = get_rotated_cropped_image(image_matrix, quad);
         cv::Mat resize_img;
-        classification_resize_image(quad_matrix, resize_img, cls_image_shape);
+        classification_resize_image(quad_matrix, resize_img, 192, 48);
         std::vector<float> mean{ 0.5f, 0.5f, 0.5f };
         std::vector<float> scale{ 1.0f / 0.5f, 1.0f / 0.5f, 1.0f / 0.5f };
         bool is_scale{ true };
         normalize(&resize_img, mean, scale, is_scale);
-        if (resize_img.cols < cls_image_shape[2]) {
-            cv::copyMakeBorder(resize_img, resize_img, 0, 0, 0, cls_image_shape[2] - resize_img.cols, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+        if (resize_img.cols < width) {
+            cv::copyMakeBorder(resize_img, resize_img, 0, 0, 0, width - resize_img.cols, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
         }
 
-        std::vector<float> input(cls_image_shape[0] * cls_image_shape[1] * cls_image_shape[2], 0.0f);
+        std::vector<float> input;
+        input.resize(tensor1 * height * width);
         permute_rgb_to_chw(resize_img, input.data());
 
         auto input_names = predictor->GetInputNames();
+        if (input_names.empty()) {
+            log::error("Input names are empty.{}");
+            return {};
+        }
         auto input_t = predictor->GetInputHandle(input_names[0]);
-        input_t->Reshape({ 1, cls_image_shape[0], cls_image_shape[1], cls_image_shape[2] });
+        if (!input_t) {
+            log::error("Input is nullptr.");
+            return {};
+        }
+        input_t->Reshape({ 1, tensor1, height, width });
         input_t->CopyFromCpu(input.data());
         predictor->Run();
 
         std::vector<float> predict_batch;
         auto output_names = predictor->GetOutputNames();
+        if (output_names.empty()) {
+            log::error("Output names are empty.{}");
+            return {};
+        }
         auto output_t = predictor->GetOutputHandle(output_names[0]);
+        if (!output_t) {
+            log::error("Output is nullptr.");
+            return {};
+        }
         auto predict_shape = output_t->shape();
-        int out_num = std::accumulate(predict_shape.begin(), predict_shape.end(), 1, std::multiplies<int>());
+        int out_num = std::accumulate(predict_shape.begin(), predict_shape.end(), 1, std::multiplies<>());
         predict_batch.resize(out_num);
         output_t->CopyToCpu(predict_batch.data());
 

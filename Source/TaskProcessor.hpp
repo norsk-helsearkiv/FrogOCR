@@ -5,7 +5,6 @@
 #include "Paddle/PaddleTextDetector.hpp"
 #include "Tesseract/TesseractTextRecognizer.hpp"
 #include "Paddle/PaddleTextAngleClassifier.hpp"
-#include "Application.hpp"
 #include "Core/Log.hpp"
 #include "Alto/Alto.hpp"
 #include "Image.hpp"
@@ -33,6 +32,8 @@ public:
     void doTask(const Task& task);
 
 private:
+
+    std::vector<int> runTextAngleClassifier(const std::vector<Quad>& quads, const Settings& settings, PIX* pix);
 
     std::vector<Task> tasks;
     Task activeTask;

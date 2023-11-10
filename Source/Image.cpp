@@ -13,6 +13,10 @@ Image::Image(std::filesystem::path path_) : path{ std::move(path_) } {
     pix = pixRead(path_to_string(path).c_str());
 }
 
+Image::Image(const char* buffer, std::size_t size) {
+    pix = pixReadMem(reinterpret_cast<const l_uint8*>(buffer), size);
+}
+
 Image::~Image() {
     pixDestroy(&pix);
 }
@@ -57,6 +61,10 @@ PIX* copy_pixels_in_quad(PIX* source, const Quad& quad) {
 }
 
 cv::Mat pix_to_mat(PIX* pix) {
+    if (!pix) {
+        log::error("Pix is nullptr.");
+        return {};
+    }
     const int width = pixGetWidth(pix);
     const int height = pixGetHeight(pix);
     const int depth = pixGetDepth(pix);

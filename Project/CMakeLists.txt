@@ -78,6 +78,7 @@ set(ALL_LINK_LIBRARIES
         libz.so
         libcrypto.so.3
         libssl.so.3
+        smbclient
         )
 
 target_link_libraries(${PROJECT_NAME} ${ALL_LINK_LIBRARIES})

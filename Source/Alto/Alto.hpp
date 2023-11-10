@@ -5,7 +5,6 @@
 #include "Layout.hpp"
 
 namespace frog {
-class Image;
 class Document;
 }
 
@@ -17,8 +16,8 @@ struct Alto {
     Styles styles;
     Layout layout;
 
-	Alto(const std::filesystem::path& path);
-	Alto(const Document& document, const Image& image);
+	Alto(std::string_view xml);
+	Alto(const Document& document, std::string path, int width, int height);
 	Alto() = default;
 
 };

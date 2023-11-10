@@ -183,10 +183,13 @@ void on_block(Document& document, BuildState buildState, tesseract::ResultIterat
     document.blocks.push_back(block);
 }
 
-void recognize_all(tesseract::TessBaseAPI& tesseract) {
+void recognize_all(tesseract::TessBaseAPI& tesseract, PIX* pix) {
     tesseract::ETEXT_DESC monitor;
     monitor.progress_callback = threadLocalTesseractProgressCallback ? globalTesseractProgressCallback : nullptr;
     monitor.cancel = threadLocalTesseractCancelCallback ? globalTesseractCancelCallback : nullptr;
+    if (pix) {
+        tesseract.SetImage(pix);
+    }
     if (tesseract.Recognize(&monitor) != 0) {
         log::error("Failed to recognize image with tesseract.");
     }
@@ -208,6 +211,7 @@ TesseractTextRecognizer::TesseractTextRecognizer(const TesseractConfig& config) 
         log::error("Did not find tessdata directory: {}", config.tessdata);
         return;
     }
+    log::info("Initializing Tesseract ({})", config.tessdata);
     if (tesseract.Init(path_to_string(config.tessdata).c_str(), config.dataset.c_str(), tesseract::OcrEngineMode::OEM_LSTM_ONLY)) {
         log::error("Failed to initialize Tesseract.");
         return;
@@ -215,6 +219,20 @@ TesseractTextRecognizer::TesseractTextRecognizer(const TesseractConfig& config) 
     setTesseractVariable(tesseract, "thresholding_method", sauvolaThresholdingMethod);
     setTesseractVariable(tesseract, "lstm_choice_mode", "2");
     setTesseractVariable(tesseract, "tessedit_write_images", "true");
+}
+
+static std::pair<float, PIX*> test_confidence(tesseract::TessBaseAPI& tesseract, PIX* pix, int angle) {
+    auto rotatedPix = pix;
+    if (angle == 90) {
+        rotatedPix = pixRotate90(pix, 1);
+    } else if (angle == 180) {
+        rotatedPix = pixRotate180(nullptr, rotatedPix);
+    } else if (angle == 270) {
+        rotatedPix = pixRotate90(pix, 1);
+        pixRotate180(rotatedPix, rotatedPix);
+    }
+    recognize_all(tesseract, rotatedPix);
+    return { static_cast<float>(tesseract.MeanTextConf()) / 100.0f, rotatedPix };
 }
 
 Document TesseractTextRecognizer::recognize(const Image& image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) {
@@ -240,7 +258,7 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
         const auto& quad = quads.front();
         tesseract.SetImage(image.getPix());
         tesseract.SetRectangle(static_cast<int>(quad.left()), static_cast<int>(quad.top()), static_cast<int>(quad.width()), static_cast<int>(quad.height()));
-        recognize_all(tesseract);
+        recognize_all(tesseract, nullptr);
         if (auto resultIterator = tesseract.GetIterator()) {
             document.confidence = getConfidence(tesseract);
             do {
@@ -251,48 +269,79 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
         std::size_t quadIndex{};
         for (const auto& quad : quads) {
             auto clippedPix = copy_pixels_in_quad(image.getPix(), quad);
-            auto rotatedPix = pixRotate(clippedPix, -quad.bottomRightToLeftAngle(), L_ROTATE_AREA_MAP, L_BRING_IN_WHITE, 0, 0);
-            // Rotate according to input angle.
+            auto pix = pixRotate(clippedPix, -quad.bottomRightToLeftAngle(), L_ROTATE_AREA_MAP, L_BRING_IN_WHITE, 0, 0);
+
+            // Rotate to match predicted angle.
             if (angles[quadIndex] == 180) {
-                pixRotate180(rotatedPix, rotatedPix);
+                pixRotate180(pix, pix);
             }
-            tesseract.SetImage(rotatedPix);
-            recognize_all(tesseract);
-            if (auto resultIterator = tesseract.GetIterator()) {
-                // TODO: Improve this nested if mess, but for now it's a quick and dirty way to test how well it works.
-                if (getConfidence(tesseract).getNormalized() < 0.4f) {
-                    // Rotate again to see if we get a better result.
-                    pixRotate180(rotatedPix, rotatedPix);
-                    if (angles[quadIndex] == 0) {
-                        angles[quadIndex] = 180;
-                    } else {
-                        angles[quadIndex] = 0;
-                    }
-                    tesseract.SetImage(rotatedPix);
-                    recognize_all(tesseract);
-                    resultIterator = tesseract.GetIterator();
-                    if (resultIterator) {
-                        if (getConfidence(tesseract).getNormalized() < 0.4f) {
-                            // Rotate back to original input angle, because it is more likely to be correct.
-                            pixRotate180(rotatedPix, rotatedPix);
-                            if (angles[quadIndex] == 0) {
-                                angles[quadIndex] = 180;
-                            } else {
-                                angles[quadIndex] = 0;
-                            }
-                            tesseract.SetImage(rotatedPix);
-                            resultIterator = tesseract.GetIterator();
-                            if (resultIterator) {
-                                build_from_result_iterator(document, resultIterator, quad, buildState);
-                            }
-                        } else {
-                            build_from_result_iterator(document, resultIterator, quad, buildState);
-                        }
-                    }
-                } else {
-                    build_from_result_iterator(document, resultIterator, quad, buildState);
+
+            // Run recognition for predicted angle, and try other rotations if confidence is bad.
+            recognize_all(tesseract, pix);
+            if (tesseract.MeanTextConf() < 40) {
+                // Keep track of the best pix so far.
+                auto bestConfidence = tesseract.MeanTextConf();
+                auto bestAngle = angles[quadIndex];
+                auto bestPix = pix;
+
+                // Try 180 rotation.
+                auto rotated180Pix = pixRotate180(nullptr, pix);
+                recognize_all(tesseract, rotated180Pix);
+                auto lastPix = rotated180Pix;
+                if (tesseract.MeanTextConf() > bestConfidence + 10) {
+                    bestConfidence = tesseract.MeanTextConf();
+                    bestAngle = angles[quadIndex] + 180;
+                    bestPix = rotated180Pix;
                 }
+
+#if 0
+                // Try 90 rotation.
+                PIX* rotated90Pix{};
+                if (bestConfidence < 50 && bestConfidence > 1) {
+                    rotated90Pix = pixRotate90(pix, 1);
+                    recognize_all(tesseract, rotated90Pix);
+                    lastPix = rotated90Pix;
+                    if (tesseract.MeanTextConf() > bestConfidence + 30) {
+                        bestConfidence = tesseract.MeanTextConf();
+                        bestAngle = angles[quadIndex] + 90;
+                        bestPix = rotated90Pix;
+                    }
+                }
+
+                // Try 270 rotation.
+                PIX* rotated270Pix{};
+                if (bestConfidence < 50 && bestConfidence > 1) {
+                    rotated270Pix = pixRotate90(pix, -1);
+                    recognize_all(tesseract, rotated270Pix);
+                    lastPix = rotated270Pix;
+                    if (tesseract.MeanTextConf() > bestConfidence + 30) {
+                        bestConfidence = tesseract.MeanTextConf();
+                        bestAngle = angles[quadIndex] + 270;
+                        bestPix = rotated270Pix;
+                    }
+                }
+#endif
+
+                // Rerun recognition for best angle if necessary.
+                angles[quadIndex] = bestAngle % 360;
+                if (lastPix != bestPix) {
+                    recognize_all(tesseract, bestPix);
+                }
+
+                // Clean up
+                pixDestroy(&rotated180Pix);
+#if 0
+                pixDestroy(&rotated90Pix);
+                pixDestroy(&rotated270Pix);
+#endif
             }
+
+            // Build document.
+            if (auto resultIterator = tesseract.GetIterator()) {
+                build_from_result_iterator(document, resultIterator, quad, buildState);
+            }
+
+            pixDestroy(&pix);
             pixDestroy(&clippedPix);
             quadIndex++;
         }
@@ -315,7 +364,7 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
     }
 
     std::unordered_map<int, int> angleCounts;
-    for (const auto& angle : angles) {
+    for (auto& angle : angles) {
         angleCounts[angle]++;
     }
     int mostUsedAngle{};

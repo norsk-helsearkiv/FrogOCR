@@ -57,6 +57,18 @@ void create_database(const DatabaseConfig& config) {
     )");
     database.execute(R"(create index index_task_custom_data_1 on task (custom_data_1);)");
     database.execute(R"(create index index_task_custom_data_2 on task (custom_data_2);)");
+    database.execute(R"(
+        create table task_result (
+            task_result_id bigserial not null primary key,
+            input_path     text      not null,
+            custom_data_1  text          null,
+            custom_data_2  bigint        null,
+            settings_csv   text      not null,
+            output_type    text      not null,
+            output_data    text      not null,
+            created_at     timestamp not null default current_timestamp
+        );
+    )");
 }
 
 void cli_config(std::stack<std::string_view> arguments) {

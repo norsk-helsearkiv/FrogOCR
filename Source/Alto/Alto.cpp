@@ -1,13 +1,12 @@
 #include "Alto.hpp"
 #include "Application.hpp"
 #include "Document.hpp"
-#include "Image.hpp"
 #include "LoadFromXmlNode.hpp"
 
 namespace frog::alto {
 
-Alto::Alto(const std::filesystem::path& path) {
-    xml::Document document{ read_file(path) };
+Alto::Alto(std::string_view xml) {
+    xml::Document document{ xml };
     auto altoNode = document.getRootNode();
     if (auto descriptionNode = altoNode.findFirstChild("Description")) {
         description = make_description_from_xml_node(descriptionNode.value());
@@ -20,19 +19,25 @@ Alto::Alto(const std::filesystem::path& path) {
     }
 }
 
-Alto::Alto(const Document& document, const Image& image) {
-    description.sourceImageInformation.fileName = image.getPath();
+Alto::Alto(const Document& document, std::string path, int width, int height) {
+    description.sourceImageInformation.fileName = path;
     for (const auto& [fontName, fontSize] : document.fonts) {
         styles.textStyles.emplace_back(fontName, fontSize);
     }
-    Page page{ document.language, image.getWidth(), image.getHeight(), document.physicalImageNumber, document.confidence.getNormalized(), document.rotationInDegrees };
-    PrintSpace printSpace{ 0, 0, image.getWidth(), image.getHeight() };
+    Page page{ document.language, width, height, document.physicalImageNumber, document.confidence.getNormalized(), document.rotationInDegrees };
+    PrintSpace printSpace{ 0, 0, width, height };
     for (const auto& block : document.blocks) {
         ComposedBlock composedBlock;
         for (const auto& paragraph : block.paragraphs) {
+            if (paragraph.lines.empty()) {
+                continue;
+            }
             TextBlock textBlock;
             textBlock.rotation = paragraph.angleInDegrees;
             for (const auto& line : paragraph.lines) {
+                if (line.words.empty()) {
+                    continue;
+                }
                 TextLine textLine;
                 textLine.styleRefs = line.styleRefs;
                 for (const auto& word: line.words) {

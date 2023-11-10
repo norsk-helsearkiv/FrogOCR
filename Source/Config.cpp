@@ -82,6 +82,20 @@ DatabaseConfig load_database_config_xml(xml::Node rootNode) {
     return config;
 }
 
+SambaCredentialsConfig load_samba_credentials_config_xml(xml::Node rootNode) {
+    SambaCredentialsConfig config;
+    for (auto node : rootNode.getChildren()) {
+        if (node.getName() == "Username") {
+            config.username = node.getContent();
+        } else if (node.getName() == "Password") {
+            config.password = node.getContent();
+        } else if (node.getName() == "Workgroup") {
+            config.workgroup = node.getContent();
+        }
+    }
+    return config;
+}
+
 Config::Config(xml::Document document) {
     schemas = launch_path() / "Schemas";
     auto rootNode = document.getRootNode();
@@ -90,10 +104,14 @@ Config::Config(xml::Document document) {
             schemas = node.getContent();
         } else if (node.getName() == "MaxThreadCount") {
             maxThreadCount = from_string<int>(node.getContent()).value_or(0);
+        } else if (node.getName() == "MaxTasksPerThread") {
+            maxTasksPerThread = from_string<int>(node.getContent()).value_or(50);
         } else if (node.getName() == "Database") {
             databases.emplace_back(load_database_config_xml(node));
         } else if (node.getName() == "Profile") {
             profiles.emplace_back(load_profile_xml(node));
+        } else if (node.getName() == "SambaCredentials") {
+            sambaCredentials.emplace_back(load_samba_credentials_config_xml(node));
         }
     }
 }

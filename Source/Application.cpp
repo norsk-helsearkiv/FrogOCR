@@ -7,6 +7,7 @@
 #include "Core/Database/Connection.hpp"
 #include "Core/XML/Validator.hpp"
 #include "Install.hpp"
+#include "Core/SambaClient.hpp"
 
 #include <csignal>
 
@@ -189,29 +190,62 @@ void cli_add(std::stack<std::string_view> arguments, const Config& config) {
 
     fmt::print("Add tasks from path: {}", addTasksPath);
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> newTaskPaths;
-    const auto inputDirectoryString = path_to_string(addTasksPath);
-    if (std::filesystem::is_directory(addTasksPath)) {
-        const auto& inputPaths = files_in_directory(addTasksPath, true, ".jpg");
-        newTaskPaths.reserve(inputPaths.size());
-        for (const auto& inputPath : inputPaths) {
-            if (addTasksOutputPath.has_value()) {
-                const auto inputPathString = path_to_string(inputPath);
-                auto relativeInputPathString = inputPathString.substr(inputDirectoryString.size());
-                while (relativeInputPathString.starts_with('/')) {
-                    relativeInputPathString.erase(0, 1);
+
+    if (addTasksPath.starts_with("smb://")) {
+        auto sambaClient = acquire_samba_client();
+        const auto inputPathFileType = sambaClient->getFileType(path_to_string(addTasksPath));
+        if (inputPathFileType == DirectoryEntryFileType::directory) {
+            const auto& inputPaths = sambaClient->getDirectoryFiles(path_to_string(addTasksPath), true);
+            newTaskPaths.reserve(inputPaths.size());
+            for (const auto& inputPath : inputPaths) {
+                if (!inputPath.ends_with(".jpg")) {
+                    continue;
                 }
-                newTaskPaths.emplace_back(inputPath, addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml"));
+                if (addTasksOutputPath.has_value()) {
+                    const auto inputPathString = path_to_string(inputPath);
+                    auto relativeInputPathString = inputPathString.substr(addTasksPath.size());
+                    while (relativeInputPathString.starts_with('/')) {
+                        relativeInputPathString.erase(0, 1);
+                    }
+                    newTaskPaths.emplace_back(inputPath, addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml"));
+                } else {
+                    newTaskPaths.emplace_back(inputPath, path_with_extension(inputPath, "xml"));
+                }
+            }
+        } else if (inputPathFileType == DirectoryEntryFileType::file) {
+            if (addTasksOutputPath.has_value()) {
+                newTaskPaths.emplace_back(addTasksPath, addTasksOutputPath.value());
             } else {
-                newTaskPaths.emplace_back(inputPath, path_with_extension(inputPath, "xml"));
+                newTaskPaths.emplace_back(addTasksPath, path_with_extension(addTasksPath, "xml"));
             }
         }
-    } else if (std::filesystem::is_regular_file(addTasksPath)) {
-        if (addTasksOutputPath.has_value()) {
-            newTaskPaths.emplace_back(addTasksPath, addTasksOutputPath.value());
-        } else {
-            newTaskPaths.emplace_back(addTasksPath, path_with_extension(addTasksPath, "xml"));
-        }
+        release_samba_client();
     } else {
+        if (std::filesystem::is_directory(addTasksPath)) {
+            const auto& inputPaths = files_in_directory(addTasksPath, true, ".jpg");
+            newTaskPaths.reserve(inputPaths.size());
+            for (const auto& inputPath : inputPaths) {
+                if (addTasksOutputPath.has_value()) {
+                    const auto inputPathString = path_to_string(inputPath);
+                    auto relativeInputPathString = inputPathString.substr(addTasksPath.size());
+                    while (relativeInputPathString.starts_with('/')) {
+                        relativeInputPathString.erase(0, 1);
+                    }
+                    newTaskPaths.emplace_back(inputPath, addTasksOutputPath.value() / path_with_extension(relativeInputPathString, "xml"));
+                } else {
+                    newTaskPaths.emplace_back(inputPath, path_with_extension(inputPath, "xml"));
+                }
+            }
+        } else if (std::filesystem::is_regular_file(addTasksPath)) {
+            if (addTasksOutputPath.has_value()) {
+                newTaskPaths.emplace_back(addTasksPath, addTasksOutputPath.value());
+            } else {
+                newTaskPaths.emplace_back(addTasksPath, path_with_extension(addTasksPath, "xml"));
+            }
+        }
+    }
+
+    if (newTaskPaths.empty()) {
         log::error("No directory or file found at specified path.");
         return;
     }
@@ -283,7 +317,7 @@ void cli_process(std::stack<std::string_view> arguments, const Config& config) {
         }
         while (!tasks.empty()) {
             for (auto& processor: processors) {
-                if (processor->getRemainingTaskCount() > 100) {
+                if (processor->getRemainingTaskCount() > config.maxTasksPerThread) {
                     continue;
                 }
                 processor->pushTask(tasks.back());
@@ -307,35 +341,69 @@ void cli_validate(std::stack<std::string_view> arguments, const Config& config) 
         fmt::print("Path to a file or directory is required.\n");
         return;
     }
-    auto validatePath = arguments.top();
+    const std::string validatePath{ arguments.top() };
     arguments.pop();
 
     log::info("Validate path: {}", validatePath);
-    std::vector<std::filesystem::path> validatePaths;
-    if (std::filesystem::is_directory(validatePath)) {
-        validatePaths = files_in_directory(validatePath, true, ".xml");
-    } else if (std::filesystem::is_regular_file(validatePath)) {
-        validatePaths = { validatePath };
+
+    std::vector<std::string> validatePaths;
+
+    SambaClient* sambaClient{};
+    if (validatePath.starts_with("smb://")) {
+        sambaClient = acquire_samba_client();
+        const auto validatePathFileType = sambaClient->getFileType(validatePath);
+        if (validatePathFileType == DirectoryEntryFileType::directory) {
+            validatePaths = sambaClient->getDirectoryFiles(validatePath, true);
+            std::erase_if(validatePaths, [](const std::string& path) {
+                return !path.ends_with(".xml");
+            });
+        } else if (validatePathFileType == DirectoryEntryFileType::file) {
+            validatePaths = { validatePath };
+        }
     } else {
+        if (std::filesystem::is_directory(validatePath)) {
+            for (const auto& path : files_in_directory(validatePath, true, ".xml")) {
+                validatePaths.push_back(path_to_string(path));
+            }
+        } else if (std::filesystem::is_regular_file(validatePath)) {
+            validatePaths = { validatePath };
+        }
+    }
+    if (validatePaths.empty()) {
         log::error("No directory or file found at specified path.");
+        if (sambaClient) {
+            release_samba_client();
+        }
         return;
     }
     const xml::Validator validator{ config.schemas / "alto.xsd" };
     const auto pathCount = validatePaths.size();
     std::size_t pathIndex{};
-    for (const auto& path: validatePaths) {
+    for (const auto& path : validatePaths) {
         pathIndex++;
-        const auto xml = read_file(path);
-        fmt::print("[{:>6}/{}] Validating {} [{:>5} KiB] ... ", pathIndex, pathCount, path, xml.size() / 1024);
-        if (xml.empty()) {
+        std::optional<std::string> xml;
+        if (sambaClient) {
+            xml = sambaClient->readFile(path);
+        } else {
+            xml = read_file(path);
+        }
+        if (!xml.has_value()) {
+            fmt::print("[{:>6}/{}] ERROR - Failed to read file: {}\n", pathIndex, pathCount, path);
+            continue;
+        }
+        fmt::print("[{:>6}/{}] Validating {} [{:>5} KiB] ... ", pathIndex, pathCount, path, xml->size() / 1024);
+        if (xml->empty()) {
             fmt::print("EMPTY\n");
             continue;
         }
-        if (const auto status = validator.validate(xml); status.has_value()) {
+        if (const auto status = validator.validate(xml.value()); status.has_value()) {
             fmt::print("ERROR - {}\n", status.value());
         } else {
             fmt::print("OK\n");
         }
+    }
+    if (sambaClient) {
+        release_samba_client();
     }
 }
 
@@ -403,6 +471,8 @@ void start() {
             log::info("Setting max thread count based on detected number of processors: %cyan{}", config.maxThreadCount);
         }
     }
+
+    initialize_samba_client(config.sambaCredentials);
 
     if (commandName == "add") {
         cli_add(arguments, config);

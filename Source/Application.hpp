@@ -22,7 +22,7 @@ class Connection;
 namespace frog::about {
 constexpr std::string_view creator{ "Norsk helsearkiv" };
 constexpr std::string_view name{ "Frog" };
-constexpr std::string_view version{ "1.6.0" };
+constexpr std::string_view version{ "1.6.1" };
 constexpr std::string_view build_date{ __DATE__ };
 }
 
