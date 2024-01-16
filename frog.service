@@ -1,11 +1,16 @@
 [Unit]
-Description=FrogOCR
+Description=Frog
 Requires=postgresql.service
 After=postgresql.service
+StartLimitIntervalSec=500
+StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/opt/frog
+ExecStart=/opt/frog/frog process
+WorkingDirectory=/opt/frog
+Restart=on-failure
+RestartSec=30s
 
 [Install]
 WantedBy=multi-user.target
