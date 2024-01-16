@@ -12,6 +12,7 @@ struct ComposedBlock {
     int width{};
     int height{};
     std::vector<TextBlock> textBlocks;
+    std::vector<std::string> processingRefs;
 
 	ComposedBlock(std::vector<TextBlock> textBlocks);
 	ComposedBlock(TextBlock textBlock);

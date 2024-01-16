@@ -42,6 +42,22 @@ struct Quad {
         return bottom() - top();
     }
 
+    float area() const {
+        return width() * height();
+    }
+
+    float coverage(const Quad& that) const {
+        const auto x = that.left();
+        const auto y = that.top();
+        const auto w = that.width();
+        const auto h = that.height();
+        const auto ix = std::max(x, left());
+        const auto iy = std::max(y, top());
+        const auto iw = std::min(x + w, right()) - ix;
+        const auto ih = std::min(y + h, bottom()) - iy;
+        return (iw * ih) / area();
+    }
+
     bool contains(float x, float y) const {
         int crossCount{};
         crossCount += (((y1 <= y && y2 > y) || (y1 > y && y2 <= y)) && (x < (y - y1) * (x2 - x1) / (y2 - y1) + x1));
@@ -51,5 +67,18 @@ struct Quad {
         return crossCount % 2 == 1;
     }
 };
+
+[[nodiscard]] inline Quad make_box_quad(float x, float y, float width, float height) {
+    Quad quad;
+    quad.x1 = x;
+    quad.y1 = y;
+    quad.x2 = x + width;
+    quad.y2 = y;
+    quad.x3 = x + width;
+    quad.y3 = y + height;
+    quad.x4 = x;
+    quad.y4 = y + height;
+    return quad;
+}
 
 }

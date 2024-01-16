@@ -3,11 +3,11 @@
 
 namespace frog {
 
-std::vector<Quad> IntegratedTextDetector::detect(const Image& image, const TextDetectionSettings& settings) {
+std::vector<Quad> IntegratedTextDetector::detect(PIX* image, const TextDetectionSettings& settings) const {
     float x{};
     float y{};
-    auto width = static_cast<float>(image.getWidth());
-    auto height = static_cast<float>(image.getHeight());
+    auto width = static_cast<float>(image->w);
+    auto height = static_cast<float>(image->h);
     if (settings.cropX.has_value()) {
         x *= settings.cropX.value();
     }

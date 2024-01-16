@@ -28,11 +28,25 @@ struct PaddleTextAngleClassifierConfig {
     std::filesystem::path model;
 };
 
+struct HuginMuninTextRecognizerConfig {
+    std::string pylaiaHtrDecodeCtcPath;
+    std::string modelDirectory;
+    std::string temporaryStorageDirectory;
+};
+
+struct HuginMuninTextDetectorConfig {
+    std::string python;
+    std::string model;
+    std::string temporaryStorageDirectory;
+};
+
 struct Profile {
     std::string name;
     std::optional<TesseractConfig> tesseract;
     std::optional<PaddleTextDetectorConfig> paddleTextDetector;
     std::optional<PaddleTextAngleClassifierConfig> paddleTextOrientationClassifier;
+    std::optional<HuginMuninTextRecognizerConfig> huginMuninTextRecognizer;
+    std::optional<HuginMuninTextDetectorConfig> huginMuninTextDetector;
 };
 
 struct DatabaseConfig {
@@ -47,6 +61,8 @@ struct Config {
 
     int maxThreadCount{};
     int maxTasksPerThread{ 50 };
+    int retryDatabaseConnectionIntervalSeconds{ 300 };
+    int emptyTaskQueueSleepIntervalSeconds{ 30 };
     std::filesystem::path schemas;
     std::vector<DatabaseConfig> databases;
     std::vector<Profile> profiles;

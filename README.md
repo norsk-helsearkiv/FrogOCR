@@ -1,64 +1,51 @@
-# FrogOCR
-Turn images into text with Tesseract, and output it as AltoXML.
+# About
+Frog combines the power of Tesseract, PaddleOCR, and other open software in a single application where you can 
+configure your pipeline with custom profiles and database integration. Options are currently limited, but these 
+stages are available right now:
+ - Tesseract Text Recognition
+ - Paddle Text Detection
+ - Paddle Text Angle Classification (0/180 deg)
+
+Each stage has its own input and output based on which type it is.
+- Text Detection
+   - Input: Full image
+   - Output: List of quads
+- Text Recognition
+  - Input: Full image, list of quads
+  - Output: Frog OCR Document
+- Text Angle Classification
+  - Input: Full image, list of quads
+  - Output: List of angle classifications (angle and confidence)
 
 ## Installation
 1. Install PostgreSQL and other dependencies.
     ```shell
-    apt install postgresql
-    apt install libjpeg8 libopenjp2-7 libtiff5
+    apt install postgresql libjpeg8 libopenjp2-7 libtiff5
     ```
-2. Create new PostgreSQL database and user with all privileges.
+2. Create a new database to store the incoming tasks.
    ```sql
    create database frog;
    create user frog with encrypted password 'frog';
    grant all privileges on database frog to frog;
    ```
-3. Create the default configuration;
+3. Execute `Resources/database.pg.sql` to install the database.
+4. Save default configuration to `/etc/frog/config.xml`, and edit as needed.
    ```shell
-   frog --install
-   ```
-4. Edit `/etc/Frog/Configuration.xml` if necessary.
-5. Finish creating the database:
-   ```shell
-   frog --create-database 
+   frog config
    ```
 
-### Setting up the FrogOCR service
-Move the service configuration to `/etc/Frog/frog.service`.
+### Set up as a service
+Move the service configuration to `/etc/frog/frog.service`.
 ```shell
-systemctl link /etc/Frog/frog.service
+systemctl link /etc/frog/frog.service
 systemctl daemon-reload
 systemctl enable frog
 systemctl start frog
 ```
 
-### What now?
-Add tasks to the `Task` table. Prefer creating a new user for adding tasks. If FrogOCR is running, it will periodically check for new tasks.
-There might be more configurations later, but for now these are hardcoded values:
-```
-Max tasks per thread = 100
-
-Minutes to sleep if database connection failed = 5
-
-Minutes to sleep if queue is empty = 10
-
-Milliseconds to sleep if all threads have max tasks = 500
-```
-
-## Options
-### --validate [path]
-Validate AltoXML files. Path can be a file or directory. Note that every XML file will be validated in a directory.
-
-### --exit-if-no-tasks
-Exit instead of sleeping when there are no tasks to process.
-
-### --install
-Install default configuration in `/etc/Frog/Configuration.xml`.
-
-### --create-database
-Creates the Task table in the configured database.
-
-### --version
-Prints the FrogOCR and Tesseract versions.
-
-### --help
+## Commands
+- help: Get more information about the different commands.
+- add: Add new tasks.
+- process: Process tasks.
+- validate: Validate output files.
+- config: Install default configuration.

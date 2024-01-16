@@ -5,6 +5,8 @@
 #include "Paddle/PaddleTextDetector.hpp"
 #include "Tesseract/TesseractTextRecognizer.hpp"
 #include "Paddle/PaddleTextAngleClassifier.hpp"
+#include "HuginMunin/HuginMuninTextDetector.hpp"
+#include "HuginMunin/HuginMuninTextRecognizer.hpp"
 #include "Core/Log.hpp"
 #include "Alto/Alto.hpp"
 #include "Image.hpp"
@@ -33,6 +35,9 @@ public:
 
 private:
 
+    const TextDetector* getTextDetector(std::string_view name) const;
+    const TextRecognizer* getTextRecognizer(std::string_view name) const;
+
     std::vector<int> runTextAngleClassifier(const std::vector<Quad>& quads, const Settings& settings, PIX* pix);
 
     std::vector<Task> tasks;
@@ -49,6 +54,8 @@ private:
     std::unique_ptr<PaddleTextDetector> paddleTextDetector;
     std::unique_ptr<TesseractTextRecognizer> tesseractTextRecognizer;
     std::unique_ptr<PaddleTextAngleClassifier> paddleTextAngleClassifier;
+    std::unique_ptr<HuginMuninTextRecognizer> huginMuninTextRecognizer;
+    std::unique_ptr<HuginMuninTextDetector> huginMuninTextDetector;
 
 };
 

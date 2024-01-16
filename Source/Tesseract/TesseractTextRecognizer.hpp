@@ -13,11 +13,11 @@ public:
 
     TesseractTextRecognizer(const TesseractConfig& config);
 
-    Document recognize(const Image& image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) override;
+    Document recognize(PIX* image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) const override;
 
 private:
 
-    tesseract::TessBaseAPI tesseract;
+    mutable tesseract::TessBaseAPI tesseract;
 
 };
 

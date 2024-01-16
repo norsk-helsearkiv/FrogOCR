@@ -188,7 +188,7 @@ void cli_add(std::stack<std::string_view> arguments, const Config& config) {
         }
     }
 
-    fmt::print("Add tasks from path: {}", addTasksPath);
+    fmt::print("Add tasks from path: {}\n", addTasksPath);
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> newTaskPaths;
 
     if (addTasksPath.starts_with("smb://")) {
@@ -295,24 +295,24 @@ void cli_process(std::stack<std::string_view> arguments, const Config& config) {
             }
         }
         if (databaseConnections.empty()) {
-            log::warning("Failed to connect to database. Trying again in 5 minutes.");
-            std::this_thread::sleep_for(std::chrono::minutes{ 5 });
+            log::warning("Failed to connect to database. Trying again in {} seconds.", config.retryDatabaseConnectionIntervalSeconds);
+            std::this_thread::sleep_for(std::chrono::seconds{ config.retryDatabaseConnectionIntervalSeconds });
             continue;
         }
         std::vector<Task> tasks;
         for (const auto& databaseConnection : databaseConnections) {
-            tasks = fetch_next_tasks(*databaseConnection, config.maxThreadCount * 100);
+            tasks = fetch_next_tasks(*databaseConnection, config.maxThreadCount * config.maxTasksPerThread);
             if (!tasks.empty()) {
                 break;
             }
         }
         if (tasks.empty()) {
             if (exitIfNoTasks) {
-                log::info("No tasks in queue. Exiting.");
+                log::info("No tasks in queue. Preparing to exit.");
                 running = false;
             } else {
-                log::info("No tasks in queue. Checking again in 30 seconds.");
-                std::this_thread::sleep_for(std::chrono::seconds{ 30 });
+                log::info("No tasks in queue. Checking again in {} seconds.", config.emptyTaskQueueSleepIntervalSeconds);
+                std::this_thread::sleep_for(std::chrono::seconds{ config.emptyTaskQueueSleepIntervalSeconds });
             }
         }
         while (!tasks.empty()) {
@@ -496,6 +496,8 @@ std::vector<Task> fetch_next_tasks(const database::Connection& database, int cou
            select task_id,
                   input_path,
                   output_path,
+                  custom_data_1,
+                  custom_data_2,
                   settings_csv
              from task
          order by priority desc
@@ -508,6 +510,8 @@ std::vector<Task> fetch_next_tasks(const database::Connection& database, int cou
         task.taskId = row.long_integer("task_id");
         task.inputPath = row.text("input_path");
         task.outputPath = row.text("output_path");
+        task.customData1 = row.text("custom_data_1");
+        task.customData2 = row.long_integer("custom_data_2");
         task.settingsCsv = row.text("settings_csv");
         tasks.emplace_back(std::move(task));
     }

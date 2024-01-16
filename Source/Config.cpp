@@ -50,6 +50,46 @@ PaddleTextAngleClassifierConfig load_paddle_orientation_classifier_config_xml(xm
     return config;
 }
 
+HuginMuninTextRecognizerConfig load_hugin_munin_text_recognizer_config_xml(xml::Node rootNode) {
+    HuginMuninTextRecognizerConfig config;
+    for (auto node : rootNode.getChildren()) {
+        if (node.getName() == "PyLaiaHtrDecodeCtcPath") {
+            config.pylaiaHtrDecodeCtcPath = node.getContent();
+        } else if (node.getName() == "ModelDirectory") {
+            config.modelDirectory = node.getContent();
+        } else if (node.getName() == "TemporaryStorageDirectory") {
+            config.temporaryStorageDirectory = node.getContent();
+        }
+    }
+    if (config.modelDirectory.empty()) {
+        log::error("HuginMunin text recognizer XML configuration is missing model directory, and will not work.");
+    }
+    if (config.temporaryStorageDirectory.empty()) {
+        log::error("HuginMunin text recognizer XML configuration is missing temporary storage directory, and will not work.");
+    }
+    return config;
+}
+
+HuginMuninTextDetectorConfig load_hugin_munin_text_detector_config_xml(xml::Node rootNode) {
+    HuginMuninTextDetectorConfig config;
+    for (auto node : rootNode.getChildren()) {
+        if (node.getName() == "Python") {
+            config.python = node.getContent();
+        } else if (node.getName() == "Model") {
+            config.model = node.getContent();
+        } else if (node.getName() == "TemporaryStorageDirectory") {
+            config.temporaryStorageDirectory = node.getContent();
+        }
+    }
+    if (config.model.empty()) {
+        log::error("HuginMunin text detector XML configuration is missing model path, and will not work.");
+    }
+    if (config.temporaryStorageDirectory.empty()) {
+        log::error("HuginMunin text detector XML configuration is missing temporary storage directory, and will not work.");
+    }
+    return config;
+}
+
 Profile load_profile_xml(xml::Node rootNode) {
     Profile profile;
     for (auto node: rootNode.getChildren()) {
@@ -59,6 +99,10 @@ Profile load_profile_xml(xml::Node rootNode) {
             profile.paddleTextDetector = load_paddle_text_detector_config_xml(node);
         } else if (node.getName() == "PaddleTextAngleClassifier") {
             profile.paddleTextOrientationClassifier = load_paddle_orientation_classifier_config_xml(node);
+        } else if (node.getName() == "HuginMuninTextDetector") {
+            profile.huginMuninTextDetector = load_hugin_munin_text_detector_config_xml(node);
+        } else if (node.getName() == "HuginMuninTextRecognizer") {
+            profile.huginMuninTextRecognizer = load_hugin_munin_text_recognizer_config_xml(node);
         }
     }
     return profile;
@@ -106,6 +150,10 @@ Config::Config(xml::Document document) {
             maxThreadCount = from_string<int>(node.getContent()).value_or(0);
         } else if (node.getName() == "MaxTasksPerThread") {
             maxTasksPerThread = from_string<int>(node.getContent()).value_or(50);
+        } else if (node.getName() == "RetryDatabaseConnectionIntervalSeconds") {
+            retryDatabaseConnectionIntervalSeconds = from_string<int>(node.getContent()).value_or(300);
+        } else if (node.getName() == "EmptyTaskQueueSleepIntervalSeconds") {
+            emptyTaskQueueSleepIntervalSeconds = from_string<int>(node.getContent()).value_or(30);
         } else if (node.getName() == "Database") {
             databases.emplace_back(load_database_config_xml(node));
         } else if (node.getName() == "Profile") {

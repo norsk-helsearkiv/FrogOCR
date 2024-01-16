@@ -263,8 +263,8 @@ PaddleTextDetector::PaddleTextDetector(const PaddleTextDetectorConfig& config) {
     predictor = paddle_infer::CreatePredictor(paddleConfig);
 }
 
-std::vector<Quad> PaddleTextDetector::detect(const Image& image, const TextDetectionSettings& settings) {
-    const auto image_matrix = pix_to_mat(image.getPix());
+std::vector<Quad> PaddleTextDetector::detect(PIX* image, const TextDetectionSettings& settings) const {
+    const auto image_matrix = pix_to_mat(image);
 
     float ratio_h{};
     float ratio_w{};
@@ -300,7 +300,7 @@ std::vector<Quad> PaddleTextDetector::detect(const Image& image, const TextDetec
         return {};
     }
     auto output_shape = output_t->shape();
-    int out_num = std::accumulate(output_shape.begin(), output_shape.end(), 1, std::multiplies<int>());
+    int out_num = std::accumulate(output_shape.begin(), output_shape.end(), 1, std::multiplies<>());
 
     out_data.resize(out_num);
     output_t->CopyToCpu(out_data.data());

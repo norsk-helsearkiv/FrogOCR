@@ -247,6 +247,7 @@ std::optional<DirectoryEntryFileType> SambaClient::getFileType(const std::string
             fmt::print("Failed to stat {}. Permission denied.\n", path);
             break;
         case 0:
+        case ENOENT:
             break;
         default:
             fmt::print("Failed to stat {}. Error: {}.\n", path, statErrno);

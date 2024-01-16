@@ -201,7 +201,11 @@ void append_print_space_xml(std::string& xml, std::string_view id, const PrintSp
 }
 
 void append_composed_block_xml(std::string& xml, std::string_view id, const ComposedBlock& composedBlock) {
-    xml += fmt::format("\t\t\t\t<ComposedBlock ID=\"{}\" HPOS=\"{}\" VPOS=\"{}\" WIDTH=\"{}\" HEIGHT=\"{}\">\n", id, composedBlock.hpos, composedBlock.vpos, composedBlock.width, composedBlock.height);
+    xml += fmt::format("\t\t\t\t<ComposedBlock ID=\"{}\" HPOS=\"{}\" VPOS=\"{}\" WIDTH=\"{}\" HEIGHT=\"{}\"", id, composedBlock.hpos, composedBlock.vpos, composedBlock.width, composedBlock.height);
+    if (!composedBlock.processingRefs.empty()) {
+        xml += fmt::format(" PROCESSINGREFS=\"{}\"", merge_strings(composedBlock.processingRefs, " "));
+    }
+    xml += ">\n";
     int index{ 0 };
     for (const auto& textBlock: composedBlock.textBlocks) {
         append_text_block_xml(xml, fmt::format("{}_tb_{}", id, index), textBlock);

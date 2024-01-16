@@ -49,11 +49,20 @@ struct TextRecognitionSettings {
     std::optional<float> minWordConfidence;
 };
 
+struct ResultSettings {
+    bool savePageAngle{};
+};
+
 struct Settings {
 
     TextDetectionSettings detection;
-    TextRecognitionSettings recognition;
     std::optional<std::string> textAngleClassifier;
+    TextRecognitionSettings recognition;
+
+    std::optional<TextDetectionSettings> additionalDetection;
+    std::optional<TextRecognitionSettings> additionalRecognition;
+
+    ResultSettings result;
     bool overwriteOutput{};
 
     Settings() = default;
@@ -69,34 +78,54 @@ struct Settings {
     }
 
     [[nodiscard]] std::string csv() const {
-        std::string result;
+        std::string csv;
 
         // Detection
-        result += fmt::format("TextDetector={},", detection.textDetector);
+        csv += fmt::format("TextDetector={},", detection.textDetector);
         for (const auto& [key, value] : detection.other) {
-            result += fmt::format("TextDetection.{}={},", key, value);
+            csv += fmt::format("TextDetection.{}={},", key, value);
+        }
+
+        // Additional Detection
+        if (additionalDetection) {
+            csv += fmt::format("TextDetector2={},", additionalDetection->textDetector);
+            for (const auto& [key, value] : additionalDetection->other) {
+                csv += fmt::format("TextDetection2.{}={},", key, value);
+            }
         }
 
         // Angle Classification
         if (textAngleClassifier.has_value()) {
-            result += fmt::format("TextAngleClassifier={},", textAngleClassifier.value());
+            csv += fmt::format("TextAngleClassifier={},", textAngleClassifier.value());
         }
 
         // Recognition
-        result += fmt::format("SauvolaKFactor={},", recognition.sauvolaKFactor);
-        result += fmt::format("PageSegmentation={},", page_segmentation_string(recognition.pageSegmentation));
-        if (!recognition.characterWhitelist.empty()) {
-            result += fmt::format("CharacterWhitelist={},", recognition.characterWhitelist);
+        if (recognition.textRecognizer == "Tesseract") {
+            csv += fmt::format("SauvolaKFactor={},", recognition.sauvolaKFactor);
+            csv += fmt::format("PageSegmentation={},", page_segmentation_string(recognition.pageSegmentation));
+            if (!recognition.characterWhitelist.empty()) {
+                csv += fmt::format("CharacterWhitelist={},", recognition.characterWhitelist);
+            }
         }
-        result += fmt::format("TextRecognizer={},", recognition.textRecognizer);
+        csv += fmt::format("TextRecognizer={},", recognition.textRecognizer);
+
+        // Additional Recognition
+        if (additionalRecognition) {
+            csv += fmt::format("TextRecognizer2={},", additionalRecognition->textRecognizer);
+        }
+
+        // Result
+        if (result.savePageAngle) {
+            csv += "Result.SavePageAngle=true,";
+        }
 
         // Misc
-        result += fmt::format("OverwriteOutput={},", overwriteOutput ? "true" : "false");
+        csv += fmt::format("OverwriteOutput={},", overwriteOutput ? "true" : "false");
 
-        if (result.ends_with(",")) {
-            result.pop_back();
+        if (csv.ends_with(",")) {
+            csv.pop_back();
         }
-        return result;
+        return csv;
     }
 
     void set(std::string_view key, std::string_view value) {
@@ -147,16 +176,34 @@ struct Settings {
             detection.textDetector = value;
         } else if (key == "TextRecognizer") {
             recognition.textRecognizer = value;
+        } else if (key == "TextDetector2") {
+            if (!additionalDetection) {
+                additionalDetection = TextDetectionSettings{};
+            }
+            additionalDetection->textDetector = value;
+        } else if (key == "TextRecognizer2") {
+            if (!additionalRecognition) {
+                additionalRecognition = TextRecognitionSettings{};
+            }
+            additionalRecognition->textRecognizer = value;
         } else if (key == "TextAngleClassifier") {
             if (!value.empty()) {
                 textAngleClassifier = value;
             }
         } else if (key == "OverwriteOutput") {
             overwriteOutput = value == "true";
+        } else if (key == "Result.SavePageAngle") {
+            result.savePageAngle = value == "true";
         } else {
             if (key.starts_with("TextDetection.")) {
                 const std::string relativeKey{ key.substr(std::string_view{"TextDetection."}.size()) };
                 detection.other[relativeKey] = value;
+            } else if (key.starts_with("TextDetection2.")) {
+                const std::string relativeKey{ key.substr(std::string_view{"TextDetection2."}.size()) };
+                if (!additionalDetection) {
+                    additionalDetection = TextDetectionSettings{};
+                }
+                additionalDetection->other[relativeKey] = value;
             }
         }
     }

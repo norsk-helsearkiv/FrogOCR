@@ -15,7 +15,7 @@ public:
 
     PaddleTextDetector(const PaddleTextDetectorConfig& config);
 
-    std::vector<Quad> detect(const Image& image, const TextDetectionSettings& settings) override;
+    std::vector<Quad> detect(PIX* image, const TextDetectionSettings& settings) const override;
 
 private:
 

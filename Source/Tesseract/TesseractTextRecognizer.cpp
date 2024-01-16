@@ -235,7 +235,7 @@ static std::pair<float, PIX*> test_confidence(tesseract::TessBaseAPI& tesseract,
     return { static_cast<float>(tesseract.MeanTextConf()) / 100.0f, rotatedPix };
 }
 
-Document TesseractTextRecognizer::recognize(const Image& image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) {
+Document TesseractTextRecognizer::recognize(PIX* image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) const {
     Document document;
     BuildState buildState;
 
@@ -256,7 +256,7 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
 
     if (quads.size() == 1) {
         const auto& quad = quads.front();
-        tesseract.SetImage(image.getPix());
+        tesseract.SetImage(image);
         tesseract.SetRectangle(static_cast<int>(quad.left()), static_cast<int>(quad.top()), static_cast<int>(quad.width()), static_cast<int>(quad.height()));
         recognize_all(tesseract, nullptr);
         if (auto resultIterator = tesseract.GetIterator()) {
@@ -268,7 +268,7 @@ Document TesseractTextRecognizer::recognize(const Image& image, const std::vecto
     } else {
         std::size_t quadIndex{};
         for (const auto& quad : quads) {
-            auto clippedPix = copy_pixels_in_quad(image.getPix(), quad);
+            auto clippedPix = copy_pixels_in_quad(image, quad);
             auto pix = pixRotate(clippedPix, -quad.bottomRightToLeftAngle(), L_ROTATE_AREA_MAP, L_BRING_IN_WHITE, 0, 0);
 
             // Rotate to match predicted angle.

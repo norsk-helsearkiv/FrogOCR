@@ -57,6 +57,12 @@ Alto::Alto(const Document& document, std::string path, int width, int height) {
             textBlock.setBoundingBox(paragraph.x, paragraph.y, paragraph.width, paragraph.height);
             composedBlock.textBlocks.emplace_back(std::move(textBlock));
         }
+        if (!block.detector.empty()) {
+            composedBlock.processingRefs.push_back(block.detector);
+        }
+        if (!block.recognizer.empty()) {
+            composedBlock.processingRefs.push_back(block.recognizer);
+        }
         composedBlock.setBoundingBox(block.x, block.y, block.width, block.height);
         printSpace.composedBlocks.emplace_back(std::move(composedBlock));
     }

@@ -1,52 +1,15 @@
 #include "Image.hpp"
-#include "Core/String.hpp"
 #include "Core/Log.hpp"
 #include "Core/Quad.hpp"
 
 namespace frog {
-
-Image::Image(PIX* pix_) : pix{ pix_ } {
-
-}
-
-Image::Image(std::filesystem::path path_) : path{ std::move(path_) } {
-    pix = pixRead(path_to_string(path).c_str());
-}
-
-Image::Image(const char* buffer, std::size_t size) {
-    pix = pixReadMem(reinterpret_cast<const l_uint8*>(buffer), size);
-}
-
-Image::~Image() {
-    pixDestroy(&pix);
-}
-
-PIX* Image::getPix() const {
-    return pix;
-}
-
-int Image::getWidth() const {
-    return pix ? static_cast<int>(pix->w) : 0;
-}
-
-int Image::getHeight() const {
-    return pix ? static_cast<int>(pix->h) : 0;
-}
-
-const std::filesystem::path& Image::getPath() const {
-    return path;
-}
-
-bool Image::isOk() const {
-    return pix != nullptr;
-}
 
 PIX* copy_pixels_in_quad(PIX* source, const Quad& quad) {
     const auto top = static_cast<int>(quad.top());
     const auto bottom = static_cast<int>(quad.bottom());
     const auto left = static_cast<int>(quad.left());
     const auto right = static_cast<int>(quad.right());
-    auto destination = pixCreate(right - left, bottom - top, static_cast<l_int32>(source->d));
+    auto destination = pixCreate(right - left, bottom - top, static_cast<int>(source->d));
     pixSetBlackOrWhite(destination, L_SET_WHITE);
     for (int y{ top }; y <= bottom; y++) {
         for (int x{ left }; x <= right; x++) {

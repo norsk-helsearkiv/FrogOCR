@@ -2,6 +2,7 @@
 
 #include "Confidence.hpp"
 #include "Core/Log.hpp"
+#include "Core/Quad.hpp"
 
 #include <optional>
 #include <vector>
@@ -40,6 +41,10 @@ struct Word {
     std::optional<int> styleRefs;
 };
 
+inline Quad make_word_quad(const Word& word) {
+    return make_box_quad(static_cast<float>(word.x), static_cast<float>(word.y), static_cast<float>(word.width), static_cast<float>(word.height));
+}
+
 struct Line {
     int x{};
     int y{};
@@ -67,6 +72,8 @@ struct Block {
     int height{};
     std::vector<Paragraph> paragraphs;
     Confidence confidence;
+    std::string detector;
+    std::string recognizer;
 };
 
 struct Document {
@@ -84,6 +91,15 @@ struct Document {
 
     Document& operator=(Document&&) = default;
     Document& operator=(const Document&) = delete;
+
+    void merge(const Document& that) {
+        // TODO: Handle fonts.
+        for (const auto& block : that.blocks) {
+            blocks.push_back(block);
+        }
+        confidence = { (confidence.getNormalized() + that.confidence.getNormalized()) / 2.0f, Confidence::Format::normalized };
+    }
+
 };
 
 }

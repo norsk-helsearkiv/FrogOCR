@@ -4,11 +4,11 @@
 #include "Document.hpp"
 #include "Settings.hpp"
 
+#include <leptonica/allheaders.h>
+
 #include <vector>
 
 namespace frog {
-
-class Image;
 
 class TextRecognizer {
 public:
@@ -22,7 +22,7 @@ public:
     TextRecognizer& operator=(const TextRecognizer&) = delete;
     TextRecognizer& operator=(TextRecognizer&&) = delete;
 
-    virtual Document recognize(const Image& image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) = 0;
+    virtual Document recognize(PIX* image, const std::vector<Quad>& quads, std::vector<int> angles, const TextRecognitionSettings& settings) const = 0;
 
 };
 
